@@ -5,11 +5,11 @@
 1. **Backend (Go API)**
 
    - Ensure PostgreSQL is running (see `compose.yml` for Docker setup).
-   - Start the Go API server from the `api/` directory (`main.go`).
-   - set -dbpass flag
+   - Start the Go API server from the `api/` directory: `go run . -dbport 5434 -dbpass postgres` (matches `compose.yml`; flags default to port 5432 and an empty password).
 
 2. **Frontend (Nuxt/Vue)**
    - Navigate to the `web/` directory.
+   - Copy `.env.example` to `.env` and adjust if needed.
    - Install dependencies: `npm install`
    - Start the dev server: `npm run dev`
 
