@@ -1,4 +1,4 @@
-# Full stack: postgres + api + web + caddy (reverse proxy on 127.0.0.1:${PROXY_PORT:-8090}).
+# Full stack: postgres + api + web + db-backup + caddy (reverse proxy on 127.0.0.1:${PROXY_PORT:-8090}).
 # Point your existing cloudflared tunnel at http://localhost:8090.
 # Required env vars: POSTGRES_PASSWORD, BETTER_AUTH_SECRET (see stack.env.example).
 # For local development (just the DB on localhost:5434) use compose.dev.yml.
@@ -58,6 +58,24 @@ services:
     depends_on:
       - api
       - web
+    restart: unless-stopped
+
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:15
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: officepong
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: '@daily'
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ${BACKUP_DIR:-/tank/shared/nas-shared/backups/pingis}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

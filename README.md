@@ -9,6 +9,15 @@
 3. Add the environment variables from `stack.env.example` (`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`). `PUBLIC_URL` / `PUBLIC_WS_URL` default to `pingis.emiljo.com`.
 4. Deploy. Tables are created automatically on first start.
 
+## Backups
+
+The `db-backup` service dumps the database daily (gzipped `pg_dump`) to `/tank/shared/nas-shared/backups/pingis` on the host (override with `BACKUP_DIR`). It keeps 7 daily, 4 weekly and 6 monthly dumps in `daily/`, `weekly/` and `monthly/`, plus `last/` with the newest one.
+
+- One-time host setup, before the first deploy: `mkdir -p /tank/shared/nas-shared/backups/pingis && chown -R 999:999 /tank/shared/nas-shared/backups/pingis` (the container writes as UID 999).
+- Back up now: `docker exec <db-backup container> /backup.sh`
+- Restore into an empty DB: `gunzip -c <file>.sql.gz | docker exec -i officepong_postgres psql -U postgres officepong`
+- The dumps are on the same machine as the database, so they don't protect against losing the server. Copy the folder elsewhere for that.
+
 ## How to Start the Project (local development)
 
 1. **Backend (Go API)**
