@@ -1,2 +1,5 @@
 .DS_Store
 api/tmp/
+
+.env
+stack.env
