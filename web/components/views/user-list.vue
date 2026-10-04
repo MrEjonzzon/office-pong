@@ -26,6 +26,11 @@
           <div v-else class="size-8 shrink-0 rounded-full bg-muted" />
 
           <span class="flex-1 truncate font-medium">{{ player.name }}</span>
+          <span
+            v-if="player.challenge && player.status !== 'none'"
+            class="shrink-0 text-xs text-muted-foreground">
+            {{ formatLabel(player.challenge.bestOf) }}
+          </span>
 
           <div class="ml-auto flex shrink-0 gap-2">
             <!-- incoming: Accept + Deny -->
@@ -64,13 +69,29 @@
               <Icon name="lucide:play" class="size-full" />
             </Button>
 
+            <!-- no challenge, picking a format: sets picker -->
+            <template v-else-if="pickingFor === player.id">
+              <Button
+                v-for="n in bestOfOptions"
+                :key="n"
+                class="h-9 w-9 p-0"
+                variant="destructive"
+                :disabled="loadingIds[player.id]"
+                @click="createChallenge(player, n)">
+                {{ n }}
+              </Button>
+              <Button class="h-9 w-9 p-2" variant="ghost" @click="pickingFor = null">
+                <Icon name="lucide:x" class="size-full" />
+              </Button>
+            </template>
+
             <!-- no challenge: challenge button -->
             <Button
               v-else
               class="h-9 w-14 p-3"
               variant="destructive"
               :disabled="loadingIds[player.id]"
-              @click="createChallenge(player)">
+              @click="pickingFor = player.id">
               <Icon
                 v-if="loadingIds[player.id]"
                 name="lucide:loader-circle"
@@ -102,6 +123,11 @@ const config = useRuntimeConfig()
 const token = sessionData?.session.token
 
 const loadingIds = reactive<Record<string, boolean>>({})
+
+/* Match format: the challenger picks the number of sets */
+const bestOfOptions = [1, 3, 5, 7]
+const pickingFor = ref<string | null>(null)
+const formatLabel = (bestOf?: number) => (!bestOf || bestOf === 1 ? '1 set' : `Bo${bestOf}`)
 
 /* Polling */
 const focused = useWindowFocus()
@@ -186,13 +212,15 @@ const allPlayers = computed<PlayerRow[]>(() => {
 })
 
 /* Actions */
-const createChallenge = async (player: PlayerRow) => {
+const createChallenge = async (player: PlayerRow, bestOf: number) => {
+  pickingFor.value = null
   loadingIds[player.id] = true
   const err = await $fetch(
     `${config.public.apiBasedUrl}/v1/user/${session.value?.user.id}/challenge/${player.id}`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
+      body: { bestOf },
     }
   )
     .then(() => null)
@@ -200,7 +228,7 @@ const createChallenge = async (player: PlayerRow) => {
   if (err) {
     toast({ title: 'Failed to send challenge', variant: 'destructive' })
   } else {
-    toast({ title: `Challenge sent to ${player.name}` })
+    toast({ title: `Challenge sent to ${player.name} (${formatLabel(bestOf)})` })
   }
   await executeGetChallenges()
   loadingIds[player.id] = false

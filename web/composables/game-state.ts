@@ -4,6 +4,7 @@ import { toast } from '~/components/ui/toast/use-toast'
 interface Player {
   uid: string
   score: number
+  setsWon: number
   name: string
   image: string
 }
@@ -15,6 +16,9 @@ interface GameState {
   serving?: string
   status: string
   winner?: string
+  bestOf: number
+  sets: Record<string, number>[] // completed sets, uid -> points
+  isDeuce: boolean
 }
 
 interface GameResponseState {
@@ -24,6 +28,8 @@ interface GameResponseState {
     serving?: string
     status: string
     version: number
+    bestOf: number
+    sets?: Record<string, number>[]
     players: Record<string, Player>
     updatedAt: string
     meta?: { [key: string]: string }
@@ -119,6 +125,10 @@ export async function useGameState(gameID: string) {
       serving: data.payload.serving,
       status: data.payload.status,
       winner: data.payload.meta?.winner,
+      bestOf: data.payload.bestOf || 1,
+      sets: data.payload.sets ?? [],
+      isDeuce:
+        !!opponent && you.score >= 10 && opponent.score >= 10 && you.score === opponent.score,
     }
   }
 

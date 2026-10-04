@@ -13,6 +13,7 @@ type Challenge struct {
 	CreatedBy  string    `json:"createdBy"`
 	CreatedAt  time.Time `json:"createdAt"`
 	GameID     *string   `json:"gameId,omitempty"`
+	BestOf     int       `json:"bestOf"`
 }
 type UserV2 struct {
 	ID            string    `json:"id"`
@@ -67,13 +68,23 @@ func CalcWinProbs(p1MMR, p2MMR int) (float64, float64) {
 	return expectedP1, 1 - expectedP1
 }
 
+// KFactor weights rating changes by match length: longer matches move the rating more.
+func KFactor(bestOf int) int {
+	switch bestOf {
+	case 1:
+		return 24
+	case 5:
+		return 40
+	case 7:
+		return 48
+	}
+	return 32
+}
+
 // p1win enough for now
 // https://en.wikipedia.org/wiki/Elo_rating_system#Formal_derivation_for_win/loss_games
-func GetRatingChange(p1MMR, p2MMR int, p1Win bool) (int, int) {
+func GetRatingChange(p1MMR, p2MMR int, p1Win bool, kFactor int) (int, int) {
 	expectedP1, expectedP2 := CalcWinProbs(p1MMR, p2MMR)
-
-	// TODO : look into reasonable kfactor, perhaps parameterize it
-	kFactor := 32
 
 	sa := 1.0
 	sb := 0.0

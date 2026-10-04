@@ -18,6 +18,13 @@ The `db-backup` service dumps the database daily (gzipped `pg_dump`) to `/tank/s
 - Restore into an empty DB: `gunzip -c <file>.sql.gz | docker exec -i officepong_postgres psql -U postgres officepong`
 - The dumps are on the same machine as the database, so they don't protect against losing the server. Copy the folder elsewhere for that.
 
+## Rules
+
+- A set is won at 11 points with a 2-point lead (at 10-10 play continues until someone leads by 2).
+- A match is 1, 3, 5 or 7 sets (first to win the majority). The challenger picks the format when sending the challenge; the opponent agrees by accepting.
+- One shared rating (MMR, Elo, starts at 1500). Longer matches move it more: K = 24 (1 set), 32 (best of 3), 40 (best of 5), 48 (best of 7).
+- The winner and set scores of each finished game are stored in the `games` table.
+
 ## How to Start the Project (local development)
 
 1. **Backend (Go API)**

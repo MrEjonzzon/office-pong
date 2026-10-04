@@ -7,8 +7,11 @@
       <h1 class="text-5xl font-bold text-white dark:text-indigo-400">
         {{ state.winner === sessionData?.user.id ? 'You Win!' : 'You Lose' }}
       </h1>
-      <p class="mt-4 text-xl text-white/80">
-        {{ state.you.score }} - {{ state.opponent?.score || 0 }}
+      <p class="mt-4 text-3xl text-white/90">
+        {{ state.you.setsWon }} - {{ state.opponent?.setsWon || 0 }}
+      </p>
+      <p v-if="state.sets.length" class="mt-2 text-lg text-white/70">
+        {{ setScores }}
       </p>
       <NuxtLink
         to="/home"
@@ -27,11 +30,14 @@
       </span>
     </button>
 
-    <div class="flex h-16 shrink-0 justify-center text-2xl">
-      <div class="flex h-full items-center space-x-6 px-4">
-        <Icon name="lucide:flag" class="text-red-500" />
-        <Icon name="lucide:bell-ring" class="text-yellow-400" />
-      </div>
+    <div class="flex h-16 shrink-0 items-center justify-center gap-4 text-xl">
+      <span class="text-sm text-muted-foreground">
+        {{ state?.bestOf && state.bestOf > 1 ? `Bo${state.bestOf}` : '1 set' }}
+      </span>
+      <span v-if="state?.bestOf && state.bestOf > 1" class="font-semibold">
+        {{ state.you.setsWon }} - {{ state.opponent?.setsWon || 0 }}
+      </span>
+      <span v-if="state?.isDeuce" class="font-semibold text-yellow-400">Deuce</span>
     </div>
 
     <button
@@ -48,6 +54,14 @@ const { data: sessionData } = await authClient.getSession()
 const route = useRoute()
 const gameID = route.params.gameID as string
 const { state, incrementScore } = await useGameState(gameID)
+
+// completed set scores from your point of view, e.g. "11-7, 9-11, 12-10"
+const setScores = computed(() => {
+  const you = sessionData?.user.id
+  const opp = state.value?.opponent?.uid
+  if (!you || !opp) return ''
+  return (state.value?.sets ?? []).map(set => `${set[you]}-${set[opp]}`).join(', ')
+})
 </script>
 
 <style lang="postcss" scoped></style>

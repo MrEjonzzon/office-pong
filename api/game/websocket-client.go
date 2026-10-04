@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,10 +21,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-const (
-	WinningScore = 11 //TODO: can be abstracted
-)
-
 // GameState is the per-game JSON state replicated to all clients
 type GameState struct {
 	ID string `json:"id"`
@@ -32,6 +29,8 @@ type GameState struct {
 	Status    string            `json:"status"` // playing, paused, finished
 	Version   int               `json:"version"`
 	Players   map[string]Player `json:"players"`
+	BestOf    int               `json:"bestOf"`
+	Sets      []map[string]int  `json:"sets"` // completed sets, uid -> points
 	UpdatedAt time.Time         `json:"updatedAt"`
 	Meta      map[string]string `json:"meta,omitempty"`
 }
@@ -53,10 +52,11 @@ type Participants struct {
 }
 
 type Player struct {
-	UID   string `json:"uid"`
-	Score int    `json:"score"`
-	Name  string `json:"name"`
-	Image string `json:"image"`
+	UID     string `json:"uid"`
+	Score   int    `json:"score"` // points in the current set
+	SetsWon int    `json:"setsWon"`
+	Name    string `json:"name"`
+	Image   string `json:"image"`
 }
 
 // internal struct to register clients with their uid
@@ -78,7 +78,7 @@ type Hub struct {
 	stateMu sync.RWMutex
 }
 
-func newHub(id string, db *sql.DB) *Hub {
+func newHub(id string, db *sql.DB, bestOf int) *Hub {
 	h := &Hub{
 		ID:         id,
 		db:         db,
@@ -93,6 +93,8 @@ func newHub(id string, db *sql.DB) *Hub {
 		Players:   make(map[string]Player),
 		Serving:   "",
 		Status:    "playing",
+		BestOf:    bestOf,
+		Sets:      []map[string]int{},
 		Version:   1,
 		UpdatedAt: time.Now(),
 	}
@@ -131,54 +133,71 @@ func (h *Hub) applyScoreUpdate(update ScoreUpdate) GameState {
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
 
-	if h.state.Status == "finished" {
+	// no scoring until both players are in, or after the match is over
+	if h.state.Status == "finished" || len(h.state.Players) < 2 {
 		return h.state
 	}
 
-	if h.state.Players == nil {
-		h.state.Players = map[string]Player{}
+	player, ok := h.state.Players[update.UserID]
+	if !ok {
+		return h.state
 	}
 
-	if player, ok := h.state.Players[update.UserID]; ok {
-		// clamp delta to reasonable bounds
-		if update.Delta > 1 {
-			update.Delta = 1
-		}
-		if update.Delta < -1 {
-			update.Delta = -1
-		}
+	// clamp delta to reasonable bounds
+	if update.Delta > 1 {
+		update.Delta = 1
+	}
+	if update.Delta < -1 {
+		update.Delta = -1
+	}
+	player.Score += update.Delta
+	if player.Score < 0 {
+		player.Score = 0
+	}
+	h.state.Players[player.UID] = player
 
-		player.Score += update.Delta
+	var opponent Player
+	for uid, p := range h.state.Players {
+		if uid != player.UID {
+			opponent = p
+		}
+	}
+
+	if SetWinner(player.Score, opponent.Score) == 1 {
+		h.state.Sets = append(h.state.Sets, map[string]int{
+			player.UID:   player.Score,
+			opponent.UID: opponent.Score,
+		})
+		player.SetsWon++
+		player.Score = 0
+		opponent.Score = 0
 		h.state.Players[player.UID] = player
+		h.state.Players[opponent.UID] = opponent
 
-		if player.Score >= WinningScore {
+		if player.SetsWon >= SetsToWin(h.state.BestOf) {
 			h.state.Status = "finished"
 			h.state.Meta = map[string]string{"winner": player.UID}
 
-			var loserUID string
-			for uid := range h.state.Players {
-				if uid != player.UID {
-					loserUID = uid
-					break
-				}
+			// set scores from the winner's point of view, e.g. "11-7, 9-11, 12-10"
+			parts := make([]string, 0, len(h.state.Sets))
+			for _, set := range h.state.Sets {
+				parts = append(parts, fmt.Sprintf("%d-%d", set[player.UID], set[opponent.UID]))
 			}
 
-			go func(db *sql.DB, gameID, winnderID, loserID string) {
-				//TODO: investigate why this sometimes, something to do with on conflict do nothing in api
-				winnerMMR, loserMMR, err := mdb.UpdateMMRAfterGame(db, winnderID, loserID)
-				
+			go func(db *sql.DB, gameID, winnerID, loserID string, bestOf int, score string) {
+				winnerMMR, loserMMR, err := mdb.UpdateMMRAfterGame(db, winnerID, loserID, bestOf)
 				if err != nil {
 					fmt.Println("[websocket-client.go] error updating MMR", err)
 					return
 				}
-				fmt.Printf("MMR UPDATE - winner %s: %d, loser: %s: %d", winnderID, winnerMMR, loserID, loserMMR)
-				if err := mdb.CompleteGame(db, gameID, winnderID); err != nil {
-					fmt.Println("[websocket-client.go] error completeing game", err)
+				fmt.Printf("MMR UPDATE - winner %s: %d, loser: %s: %d\n", winnerID, winnerMMR, loserID, loserMMR)
+				if err := mdb.CompleteGame(db, gameID, winnerID, score); err != nil {
+					fmt.Println("[websocket-client.go] error completing game", err)
 				}
-			}(h.db, h.ID, player.UID, loserUID)
+			}(h.db, h.ID, player.UID, opponent.UID, h.state.BestOf, strings.Join(parts, ", "))
 		}
-
 	}
+
 	h.state.Version++
 	h.state.UpdatedAt = time.Now()
 
@@ -256,7 +275,11 @@ func CreateHub(id string, db *sql.DB) *Hub {
 	if h, ok := hubs[id]; ok {
 		return h
 	}
-	h := newHub(id, db)
+	bestOf, err := mdb.GetGameBestOf(db, id)
+	if err != nil || !ValidBestOf(bestOf) {
+		bestOf = 1
+	}
+	h := newHub(id, db, bestOf)
 	hubs[id] = h
 	go h.run()
 	return h

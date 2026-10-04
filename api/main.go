@@ -102,6 +102,11 @@ END$$;`
     "createdAt" TIMESTAMP NOT NULL
 );`
 
+	// match format and result columns, for DBs created before best-of-N sets
+	challengesBestOf := `ALTER TABLE "challenges" ADD COLUMN IF NOT EXISTS "bestOf" integer NOT NULL DEFAULT 1;`
+	gamesWinner := `ALTER TABLE "games" ADD COLUMN IF NOT EXISTS "winnerId" text REFERENCES "user" ("id");`
+	gamesScore := `ALTER TABLE "games" ADD COLUMN IF NOT EXISTS "score" text;`
+
 	userStats := `CREATE TABLE IF NOT EXISTS "user_stats"(
 		"userId" TEXT NOT NULL PRIMARY KEY REFERENCES "user" ("id"),
 		"mmr" INTEGER NOT NULL DEFAULT 1500,
@@ -110,7 +115,7 @@ END$$;`
 		"updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
 	)`
 
-	for _, query := range []string{authUser, authUsernameCol, authDisplayUsernameCol, authSession, authAccount, authVerification, enumCheck, challenges, games, userStats} {
+	for _, query := range []string{authUser, authUsernameCol, authDisplayUsernameCol, authSession, authAccount, authVerification, enumCheck, challenges, games, userStats, challengesBestOf, gamesWinner, gamesScore} {
 		_, err := db.Exec(query)
 		if err != nil {
 			log.Fatalf("error creating table: %v", err)
@@ -208,7 +213,22 @@ func sendChallengeHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		id, err := mdb.CreateChallenge(db, challenger, challengee)
+		// optional body {"bestOf": 1|3|5|7}; no body means a single set
+		bestOf := 1
+		if r.Body != nil {
+			var body struct {
+				BestOf int `json:"bestOf"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.BestOf != 0 {
+				bestOf = body.BestOf
+			}
+		}
+		if !gamews.ValidBestOf(bestOf) {
+			encodeError(fmt.Errorf("bestOf must be 1, 3, 5 or 7"), w, http.StatusBadRequest)
+			return
+		}
+
+		id, err := mdb.CreateChallenge(db, challenger, challengee, bestOf)
 		encodeResponse(w, SendChallengeResponse{Data: id, Error: err}, http.StatusCreated)
 	}
 }
