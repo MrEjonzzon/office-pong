@@ -11,7 +11,8 @@ export const auth = betterAuth({
     })(),
     ssl: (() => {
       const config = useRuntimeConfig()
-      return config.dbSsl === 'false' ||
+      // Nuxt parses NUXT_DB_SSL=false into a boolean, so compare as a string
+      return String(config.dbSsl) === 'false' ||
         config.dbHost === 'localhost' ||
         config.dbHost === '127.0.0.1'
         ? false
