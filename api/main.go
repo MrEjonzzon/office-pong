@@ -71,7 +71,10 @@ func main() {
 	protected.Use(mw.AuthMiddleware((db)))
 
 	// better-auth tables (same as web/better-auth_migrations), so a fresh DB works without `npm run migrate`
-	authUser := `CREATE TABLE IF NOT EXISTS "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" boolean not null, "image" text, "createdAt" timestamp not null, "updatedAt" timestamp not null);`
+	authUser := `CREATE TABLE IF NOT EXISTS "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" boolean not null, "image" text, "createdAt" timestamp not null, "updatedAt" timestamp not null, "username" text unique, "displayUsername" text);`
+	// columns added by better-auth's username plugin, for DBs created before it was enabled
+	authUsernameCol := `ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "username" text UNIQUE;`
+	authDisplayUsernameCol := `ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "displayUsername" text;`
 	authSession := `CREATE TABLE IF NOT EXISTS "session" ("id" text not null primary key, "expiresAt" timestamp not null, "token" text not null unique, "createdAt" timestamp not null, "updatedAt" timestamp not null, "ipAddress" text, "userAgent" text, "userId" text not null references "user" ("id"));`
 	authAccount := `CREATE TABLE IF NOT EXISTS "account" ("id" text not null primary key, "accountId" text not null, "providerId" text not null, "userId" text not null references "user" ("id"), "accessToken" text, "refreshToken" text, "idToken" text, "accessTokenExpiresAt" timestamp, "refreshTokenExpiresAt" timestamp, "scope" text, "password" text, "createdAt" timestamp not null, "updatedAt" timestamp not null);`
 	authVerification := `CREATE TABLE IF NOT EXISTS "verification" ("id" text not null primary key, "identifier" text not null, "value" text not null, "expiresAt" timestamp not null, "createdAt" timestamp, "updatedAt" timestamp);`
@@ -107,7 +110,7 @@ END$$;`
 		"updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
 	)`
 
-	for _, query := range []string{authUser, authSession, authAccount, authVerification, enumCheck, challenges, games, userStats} {
+	for _, query := range []string{authUser, authUsernameCol, authDisplayUsernameCol, authSession, authAccount, authVerification, enumCheck, challenges, games, userStats} {
 		_, err := db.Exec(query)
 		if err != nil {
 			log.Fatalf("error creating table: %v", err)

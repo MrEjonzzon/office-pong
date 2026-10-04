@@ -5,12 +5,11 @@ import { toast } from '~/components/ui/toast/use-toast'
 const { data: session } = await useSession(useFetch)
 const router = useRouter()
 
-const name = ref('')
-const email = ref('')
+const username = ref('')
 const password = ref('')
 
 async function handleSignIn() {
-  const { error } = await authClient.signIn.email({ email: email.value, password: password.value })
+  const { error } = await authClient.signIn.username({ username: username.value, password: password.value })
   if (error) {
     toast({ title: 'Sign in failed', description: error.message, variant: 'destructive' })
     return
@@ -19,7 +18,13 @@ async function handleSignIn() {
 }
 
 async function handleSignUp() {
-  const { error } = await authClient.signUp.email({ name: name.value, email: email.value, password: password.value })
+  const { error } = await authClient.signUp.email({
+    // better-auth requires an email; this one is synthetic and never used (.invalid can't receive mail)
+    email: `${username.value.toLowerCase()}@users.pingis.invalid`,
+    name: username.value,
+    username: username.value,
+    password: password.value,
+  })
   if (error) {
     toast({ title: 'Sign up failed', description: error.message, variant: 'destructive' })
     return
@@ -41,11 +46,10 @@ async function handleSignUp() {
         <p class="mt-1 text-sm italic text-muted-foreground">Corporate friendly competition</p>
       </div>
 
-      <!-- Email/password auth (Google sign-in disabled until we have our own OAuth client) -->
+      <!-- Username/password auth (Google sign-in disabled until we have our own OAuth client) -->
       <form v-if="!session" class="flex w-full flex-col gap-2" @submit.prevent="handleSignIn">
-        <Input v-model="name" type="text" placeholder="name" />
-        <Input v-model="email" type="email" placeholder="email" />
-        <Input v-model="password" type="password" placeholder="password" />
+        <Input v-model="username" type="text" placeholder="username" autocomplete="username" />
+        <Input v-model="password" type="password" placeholder="password" autocomplete="current-password" />
         <div class="flex gap-2">
           <button
             type="submit"
