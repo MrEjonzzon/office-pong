@@ -17,6 +17,7 @@ The `db-backup` service dumps the database daily (gzipped `pg_dump`) to `/tank/s
 - Back up now: `docker exec <db-backup container> /backup.sh`
 - Restore into an empty DB: `gunzip -c <file>.sql.gz | docker exec -i officepong_postgres psql -U postgres officepong`
 - The dumps are on the same machine as the database, so they don't protect against losing the server. Copy the folder elsewhere for that.
+- Reset a user's password (run on the server, needs `python3` and `docker`): `./scripts/reset-password.sh <username> <new-password>`. It also logs the user out everywhere. Without the repo on the server: `curl -O https://raw.githubusercontent.com/MrEjonzzon/office-pong/main/scripts/reset-password.sh && chmod +x reset-password.sh` (public repo only).
 
 ## Rules
 
