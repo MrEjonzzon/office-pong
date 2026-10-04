@@ -2,11 +2,11 @@
 
 ## Deploy with Portainer (Docker + Cloudflare Tunnel)
 
-`compose.yml` runs everything: Postgres, the Go API, the Nuxt web app, a Caddy reverse proxy and `cloudflared`.
+`compose.yml` runs everything: Postgres, the Go API, the Nuxt web app, and a Caddy reverse proxy published on `127.0.0.1:8090`. It assumes `cloudflared` already runs on the host.
 
-1. In Cloudflare Zero Trust, create a tunnel and copy its token. Add a public hostname `office-pong.emiljo.com` with service `http://proxy:80`.
+1. In your existing Cloudflare tunnel, add a published application: hostname `pingis.emiljo.com`, service `HTTP` → `localhost:8090`.
 2. In Portainer: Stacks → Add stack → **Repository**. Set the repo URL and compose path `compose.yml`.
-3. Add the environment variables from `stack.env.example` (`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `TUNNEL_TOKEN`). `PUBLIC_URL` / `PUBLIC_WS_URL` default to `office-pong.emiljo.com`.
+3. Add the environment variables from `stack.env.example` (`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`). `PUBLIC_URL` / `PUBLIC_WS_URL` default to `pingis.emiljo.com`.
 4. Deploy. Tables are created automatically on first start.
 
 ## How to Start the Project (local development)

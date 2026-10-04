@@ -1,5 +1,6 @@
-# Full stack: postgres + api + web + caddy (reverse proxy) + cloudflared (tunnel).
-# Required env vars: POSTGRES_PASSWORD, BETTER_AUTH_SECRET, TUNNEL_TOKEN (see stack.env.example).
+# Full stack: postgres + api + web + caddy (reverse proxy on 127.0.0.1:${PROXY_PORT:-8090}).
+# Point your existing cloudflared tunnel at http://localhost:8090.
+# Required env vars: POSTGRES_PASSWORD, BETTER_AUTH_SECRET (see stack.env.example).
 # For local development (just the DB on localhost:5434) use compose.dev.yml.
 services:
   postgres:
@@ -36,9 +37,9 @@ services:
     build: ./web
     environment:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
-      BETTER_AUTH_URL: ${PUBLIC_URL:-https://office-pong.emiljo.com}
-      NUXT_PUBLIC_API_BASED_URL: ${PUBLIC_URL:-https://office-pong.emiljo.com}/api
-      NUXT_PUBLIC_API_BASED_URL_WS: ${PUBLIC_WS_URL:-wss://office-pong.emiljo.com}/api
+      BETTER_AUTH_URL: ${PUBLIC_URL:-https://pingis.emiljo.com}
+      NUXT_PUBLIC_API_BASED_URL: ${PUBLIC_URL:-https://pingis.emiljo.com}/api
+      NUXT_PUBLIC_API_BASED_URL_WS: ${PUBLIC_WS_URL:-wss://pingis.emiljo.com}/api
       NUXT_DB_HOST: postgres
       NUXT_DB_PORT: '5432'
       NUXT_DB_NAME: officepong
@@ -52,18 +53,11 @@ services:
 
   proxy:
     build: ./deploy
+    ports:
+      - '127.0.0.1:${PROXY_PORT:-8090}:80'
     depends_on:
       - api
       - web
-    restart: unless-stopped
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN}
-    depends_on:
-      - proxy
     restart: unless-stopped
 
 volumes:
