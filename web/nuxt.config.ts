@@ -15,6 +15,9 @@ export default defineNuxtConfig({
     dbUser: '',
     dbPassword: '',
     dbSsl: '',
+    // Credentials for /admin (NUXT_ADMIN_USERNAME / NUXT_ADMIN_PASSWORD); empty password disables it
+    adminUsername: '',
+    adminPassword: '',
     public: {
       // Overridden at runtime by NUXT_PUBLIC_API_BASED_URL (reading process.env here would bake it in at build time)
       apiBasedUrl: '',

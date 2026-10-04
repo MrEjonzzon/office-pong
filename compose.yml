@@ -46,6 +46,8 @@ services:
       NUXT_DB_USER: postgres
       NUXT_DB_PASSWORD: ${POSTGRES_PASSWORD}
       NUXT_DB_SSL: 'false'
+      NUXT_ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      NUXT_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

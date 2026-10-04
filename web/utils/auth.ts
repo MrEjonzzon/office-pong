@@ -3,22 +3,25 @@ import { username } from 'better-auth/plugins'
 
 import { Pool } from 'pg'
 
+// Shared with the admin API routes (server/api/admin)
+export const pool = new Pool({
+  connectionString: (() => {
+    const config = useRuntimeConfig()
+    return `postgres://${config.dbUser}:${config.dbPassword}@${config.dbHost}:${config.dbPort}/${config.dbName}`
+  })(),
+  ssl: (() => {
+    const config = useRuntimeConfig()
+    // Nuxt parses NUXT_DB_SSL=false into a boolean, so compare as a string
+    return String(config.dbSsl) === 'false' ||
+      config.dbHost === 'localhost' ||
+      config.dbHost === '127.0.0.1'
+      ? false
+      : { rejectUnauthorized: false }
+  })(),
+})
+
 export const auth = betterAuth({
-  database: new Pool({
-    connectionString: (() => {
-      const config = useRuntimeConfig()
-      return `postgres://${config.dbUser}:${config.dbPassword}@${config.dbHost}:${config.dbPort}/${config.dbName}`
-    })(),
-    ssl: (() => {
-      const config = useRuntimeConfig()
-      // Nuxt parses NUXT_DB_SSL=false into a boolean, so compare as a string
-      return String(config.dbSsl) === 'false' ||
-        config.dbHost === 'localhost' ||
-        config.dbHost === '127.0.0.1'
-        ? false
-        : { rejectUnauthorized: false }
-    })(),
-  }),
+  database: pool,
   emailAndPassword: {
     enabled: true,
   },

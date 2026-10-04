@@ -19,15 +19,17 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 2. **Backup folder** (one time, on the server):
    `mkdir -p /tank/shared/nas-shared/backups/pingis && chown -R 999:999 /tank/shared/nas-shared/backups/pingis`
 3. **Portainer:** Stacks → Add stack → **Repository**. Repository URL `https://github.com/MrEjonzzon/office-pong`, reference `refs/heads/main`, compose path `compose.yml`.
-4. **Environment variables:** `POSTGRES_PASSWORD` and `BETTER_AUTH_SECRET` (see `stack.env.example`; generate with `openssl rand -hex 16` and `openssl rand -hex 32`). Don't change `POSTGRES_PASSWORD` after the first deploy.
+4. **Environment variables:** `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and `ADMIN_PASSWORD` (see `stack.env.example`; generate with `openssl rand -hex 16`, `openssl rand -hex 32` and `openssl rand -base64 24 | tr -d '/+='`). `ADMIN_USERNAME` defaults to `admin`. Don't change `POSTGRES_PASSWORD` after the first deploy.
 5. **Deploy.** Tables are created automatically on first start. To update later: push, then "Pull and redeploy".
 
 Live games are kept in memory, so redeploying during a game loses that game.
 
 ## Admin
 
+- **Admin page:** `/admin` (e.g. `https://pingis.emiljo.com/admin`) lists users and lets you create users, rename (display name), set a password and delete users. The browser asks for a login: `ADMIN_USERNAME` / `ADMIN_PASSWORD` from the stack variables. If `ADMIN_PASSWORD` is empty, the page is disabled. Deleting removes the user's games and challenges, but other players' ratings are not recalculated.
 - **Backups:** the database is dumped daily to `/tank/shared/nas-shared/backups/pingis` (7 daily, 4 weekly, 6 monthly, plus `last/`). Back up now: `docker exec <db-backup container> /backup.sh`. Restore into an empty DB: `gunzip -c <file>.sql.gz | docker exec -i officepong_postgres psql -U postgres officepong`. The dumps live on the same machine, so copy them elsewhere to survive losing the server.
 - **Reset a password** (on the server, needs `python3` and `docker`): `./scripts/reset-password.sh <username> <new-password>`. It also logs the user out everywhere.
+- **Delete users** (e.g. test accounts; on the server): `./scripts/delete-user.sh <username> [username...]`. It asks for confirmation and removes their games and challenges too. Other players' ratings are not recalculated.
 
 ## Local development
 
