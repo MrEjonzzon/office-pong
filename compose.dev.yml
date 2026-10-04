@@ -1,0 +1,22 @@
+# Local development: only Postgres, published on localhost:5434 (matches web/.env.example).
+#   docker compose -f compose.dev.yml up -d
+services:
+  postgres:
+    image: postgres:15
+    container_name: officepong_postgres_dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: officepong
+    ports:
+      - '127.0.0.1:5434:5432'
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:

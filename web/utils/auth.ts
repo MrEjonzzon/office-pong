@@ -10,7 +10,9 @@ export const auth = betterAuth({
     })(),
     ssl: (() => {
       const config = useRuntimeConfig()
-      return config.dbHost === 'localhost' || config.dbHost === '127.0.0.1'
+      return config.dbSsl === 'false' ||
+        config.dbHost === 'localhost' ||
+        config.dbHost === '127.0.0.1'
         ? false
         : { rejectUnauthorized: false }
     })(),

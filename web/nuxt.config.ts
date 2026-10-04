@@ -14,8 +14,10 @@ export default defineNuxtConfig({
     dbName: '',
     dbUser: '',
     dbPassword: '',
+    dbSsl: '',
     public: {
-      apiBasedUrl: process.env.NUXT_PUBLIC_API_BASED_URL, //TODO: i dont remember why we didnt expose this here, might need to remove, used from some component
+      // Overridden at runtime by NUXT_PUBLIC_API_BASED_URL (reading process.env here would bake it in at build time)
+      apiBasedUrl: '',
       apiBasedUrlWs: '',
     },
   },

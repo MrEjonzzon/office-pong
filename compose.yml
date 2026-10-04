@@ -1,13 +1,14 @@
+# Full stack: postgres + api + web + caddy (reverse proxy) + cloudflared (tunnel).
+# Required env vars: POSTGRES_PASSWORD, BETTER_AUTH_SECRET, TUNNEL_TOKEN (see stack.env.example).
+# For local development (just the DB on localhost:5434) use compose.dev.yml.
 services:
   postgres:
     image: postgres:15
     container_name: officepong_postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: officepong
-    ports:
-      - '5434:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -16,6 +17,54 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  api:
+    build: ./api
+    command:
+      - -dbhost=postgres
+      - -dbport=5432
+      - -dbname=officepong
+      - -dbuser=postgres
+      - -dbpass=${POSTGRES_PASSWORD}
+      - -dbsslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${PUBLIC_URL:-https://office-pong.emiljo.com}
+      NUXT_PUBLIC_API_BASED_URL: ${PUBLIC_URL:-https://office-pong.emiljo.com}/api
+      NUXT_PUBLIC_API_BASED_URL_WS: ${PUBLIC_WS_URL:-wss://office-pong.emiljo.com}/api
+      NUXT_DB_HOST: postgres
+      NUXT_DB_PORT: '5432'
+      NUXT_DB_NAME: officepong
+      NUXT_DB_USER: postgres
+      NUXT_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      NUXT_DB_SSL: 'false'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  proxy:
+    build: ./deploy
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN}
+    depends_on:
+      - proxy
+    restart: unless-stopped
 
 volumes:
   postgres_data:

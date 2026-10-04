@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 
 	"github.com/namsral/flag"
 
@@ -38,15 +39,19 @@ func main() {
 		dbName     = flag.String("dbname", "officepong", "Postgres database name")
 		dbUser     = flag.String("dbuser", "postgres", "Postgres user name")
 		dbPassword = flag.String("dbpass", "", "Postgres password")
+		dbSSLMode  = flag.String("dbsslmode", "", "Postgres sslmode (default: disable for localhost, require otherwise)")
 	)
 	flag.Parse()
 
-	sslMode := "require"
-	if *dbHost == "localhost" || *dbHost == "127.0.0.1" {
-		sslMode = "disable"
+	sslMode := *dbSSLMode
+	if sslMode == "" {
+		sslMode = "require"
+		if *dbHost == "localhost" || *dbHost == "127.0.0.1" {
+			sslMode = "disable"
+		}
 	}
-	postgresConnStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", *dbUser, *dbPassword, *dbHost, *dbPort, *dbName, sslMode)
-	fmt.Println("Connecting to Postgres with connection string:", postgresConnStr)
+	postgresConnStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", *dbUser, url.QueryEscape(*dbPassword), *dbHost, *dbPort, *dbName, sslMode)
+	fmt.Printf("Connecting to Postgres at %s:%s/%s (sslmode=%s)\n", *dbHost, *dbPort, *dbName, sslMode)
 
 	connStr := postgresConnStr
 	db, err := sql.Open("postgres", connStr)
@@ -64,6 +69,12 @@ func main() {
 	r := mux.NewRouter()
 	protected := r.PathPrefix("/api").Subrouter()
 	protected.Use(mw.AuthMiddleware((db)))
+
+	// better-auth tables (same as web/better-auth_migrations), so a fresh DB works without `npm run migrate`
+	authUser := `CREATE TABLE IF NOT EXISTS "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" boolean not null, "image" text, "createdAt" timestamp not null, "updatedAt" timestamp not null);`
+	authSession := `CREATE TABLE IF NOT EXISTS "session" ("id" text not null primary key, "expiresAt" timestamp not null, "token" text not null unique, "createdAt" timestamp not null, "updatedAt" timestamp not null, "ipAddress" text, "userAgent" text, "userId" text not null references "user" ("id"));`
+	authAccount := `CREATE TABLE IF NOT EXISTS "account" ("id" text not null primary key, "accountId" text not null, "providerId" text not null, "userId" text not null references "user" ("id"), "accessToken" text, "refreshToken" text, "idToken" text, "accessTokenExpiresAt" timestamp, "refreshTokenExpiresAt" timestamp, "scope" text, "password" text, "createdAt" timestamp not null, "updatedAt" timestamp not null);`
+	authVerification := `CREATE TABLE IF NOT EXISTS "verification" ("id" text not null primary key, "identifier" text not null, "value" text not null, "expiresAt" timestamp not null, "createdAt" timestamp, "updatedAt" timestamp);`
 
 	enumCheck := `DO $$
 BEGIN
@@ -96,7 +107,7 @@ END$$;`
 		"updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
 	)`
 
-	for _, query := range []string{enumCheck, challenges, games, userStats} {
+	for _, query := range []string{authUser, authSession, authAccount, authVerification, enumCheck, challenges, games, userStats} {
 		_, err := db.Exec(query)
 		if err != nil {
 			log.Fatalf("error creating table: %v", err)

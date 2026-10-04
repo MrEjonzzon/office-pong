@@ -1,10 +1,19 @@
 # Office Pong
 
-## How to Start the Project
+## Deploy with Portainer (Docker + Cloudflare Tunnel)
+
+`compose.yml` runs everything: Postgres, the Go API, the Nuxt web app, a Caddy reverse proxy and `cloudflared`.
+
+1. In Cloudflare Zero Trust, create a tunnel and copy its token. Add a public hostname `office-pong.emiljo.com` with service `http://proxy:80`.
+2. In Portainer: Stacks → Add stack → **Repository**. Set the repo URL and compose path `compose.yml`.
+3. Add the environment variables from `stack.env.example` (`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `TUNNEL_TOKEN`). `PUBLIC_URL` / `PUBLIC_WS_URL` default to `office-pong.emiljo.com`.
+4. Deploy. Tables are created automatically on first start.
+
+## How to Start the Project (local development)
 
 1. **Backend (Go API)**
 
-   - Ensure PostgreSQL is running (see `compose.yml` for Docker setup).
+   - Start Postgres: `docker compose -f compose.dev.yml up -d` (published on `localhost:5434`).
    - Start the Go API server from the `api/` directory: `go run . -dbport 5434 -dbpass postgres` (matches `compose.yml`; flags default to port 5432 and an empty password).
 
 2. **Frontend (Nuxt/Vue)**
@@ -24,12 +33,12 @@
   - `types/` — TypeScript types for API and users.
   - `assets/` — Static files and images.
   - `configs/` — App and PWA configuration.
-- `compose.yml` — Docker Compose for PostgreSQL.
+- `compose.yml` — production stack for Portainer; `compose.dev.yml` — local PostgreSQL only.
 - `README.md` — Project description.
 
 ## Database Information
 
-- Uses **PostgreSQL** (see `compose.yml` for Docker setup).
+- Uses **PostgreSQL** (see `compose.dev.yml` for local Docker setup).
 - Main tables: `user`, `challenges`, `matches`, `players`.
 - Challenge logic ensures only one pending challenge between two users at a time.
 - Connection info and secrets are managed via `.env` and Nuxt runtime config.
@@ -42,6 +51,10 @@
 - **Database Migrations:** Use the provided migration scripts in `better-auth_migrations/` and the `migrate` npm script.
 - **Environment Variables:** Ensure `.env` is correctly set up for local development.
 - **Frontend/Backend Sync:** Make sure both servers are running and connected to the same database instance.
+
+## Credits
+
+The code was written by [@EliottCarvalhal](https://github.com/EliottCarvalhal). Only minor changes were made on top of it for hosting (Docker/Portainer deployment).
 
 ---
 
