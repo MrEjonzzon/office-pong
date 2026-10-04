@@ -63,6 +63,9 @@ async function handleSignUp() {
             Sign up
           </button>
         </div>
+        <p class="text-center text-xs text-muted-foreground">
+          Username: 3-30 letters, digits, _ or . · Password: at least 8 characters
+        </p>
       </form>
 
       <!-- Session action -->
