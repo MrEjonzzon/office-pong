@@ -10,8 +10,9 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 4. To end the match early, tap "Pick winner" and choose who won. Your opponent must confirm.
 5. The result is saved only when both players agree. Then the ratings change. See the leaderboard and your profile for stats.
 6. If your opponent rejects the result, the score restarts at 0-0.
-7. Tap "Cancel match" to stop the match. No result is saved.
-8. Your profile shows your K/D and your wins and losses against each player.
+7. Tap "Cancel match" to stop the match. No result is saved. You can also cancel while a result waits.
+8. From the home list, you can confirm, reject or cancel a waiting result.
+9. Your profile shows your K/D and your wins and losses against each player.
 
 **Rules:** a set goes to 11 points with a 2-point lead (so 10-10 continues until someone leads by 2). A match is 1, 3, 5 or 7 sets and the first to win the majority takes it. There is one shared rating (Elo, starts at 1500). Longer matches move it more: K = 24 / 32 / 40 / 48 for 1 / 3 / 5 / 7 sets.
 
@@ -25,7 +26,7 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 4. **Environment variables:** `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and `ADMIN_PASSWORD` (see `stack.env.example`; generate with `openssl rand -hex 16`, `openssl rand -hex 32` and `openssl rand -base64 24 | tr -d '/+='`). `ADMIN_USERNAME` defaults to `admin`. Don't change `POSTGRES_PASSWORD` after the first deploy.
 5. **Deploy.** Tables are created automatically on first start. To update later: push, then "Pull and redeploy".
 
-Live games are kept in memory, so redeploying during a game loses that game.
+The score of a game in progress is kept in memory. If you redeploy during a game, that score is lost. A proposed result is kept.
 
 ## Admin
 

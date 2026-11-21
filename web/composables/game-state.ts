@@ -181,7 +181,10 @@ export async function useGameState(gameID: string) {
     websocket.value.send(JSON.stringify(message))
   }
 
+  const busy = ref(false)
   const postAction = async (path: string, body?: Record<string, string>) => {
+    if (busy.value) return
+    busy.value = true
     const config = useRuntimeConfig()
     try {
       await $fetch(`${config.public.apiBasedUrl}/v1/game/${gameID}/${path}`, {
@@ -195,6 +198,8 @@ export async function useGameState(gameID: string) {
         description: e?.data?.error ?? 'Could not reach the game server.',
         variant: 'destructive',
       })
+    } finally {
+      busy.value = false
     }
   }
 
@@ -206,6 +211,7 @@ export async function useGameState(gameID: string) {
   return {
     connected,
     state,
+    busy,
     incrementScore,
     proposeWinner,
     confirmResult,

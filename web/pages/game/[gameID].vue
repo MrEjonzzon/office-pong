@@ -7,8 +7,8 @@
       <h1 class="text-5xl font-bold text-white dark:text-indigo-400">
         {{ state.winner === sessionData?.user.id ? 'You Win!' : 'You Lose' }}
       </h1>
-      <p class="mt-4 text-3xl text-white/90">
-        {{ state.you.setsWon }} - {{ state.opponent?.setsWon || 0 }}
+      <p v-if="state.score" class="mt-4 text-3xl text-white/90">
+        {{ state.score }}
       </p>
       <p v-if="state.sets.length" class="mt-2 text-lg text-white/70">
         {{ setScores }}
@@ -33,10 +33,16 @@
         </h1>
         <p v-if="state.score" class="text-xl text-white/80">{{ state.score }}</p>
         <div class="flex gap-4">
-          <Button @click="confirmResult">Confirm</Button>
-          <Button variant="secondary" @click="rejectResult">Reject</Button>
+          <Button :disabled="busy" @click="confirmResult">Confirm</Button>
+          <Button variant="secondary" :disabled="busy" @click="rejectResult">Reject</Button>
         </div>
       </template>
+      <Button variant="outline" :disabled="busy" @click="askCancel">Cancel match</Button>
+      <NuxtLink
+        to="/home"
+        class="mt-8 rounded-xl bg-white px-6 py-3 text-lg font-semibold dark:bg-black/70 dark:text-white">
+        Back to Home
+      </NuxtLink>
     </div>
 
     <!-- Cancelled Overlay -->
@@ -80,15 +86,15 @@
 
     <div v-if="state?.status === 'ongoing'" class="flex shrink-0 flex-wrap items-center justify-center gap-2">
       <template v-if="picking">
-        <Button @click="pick(state.you.uid)">I won</Button>
-        <Button v-if="state.opponent" @click="pick(state.opponent.uid)">
+        <Button :disabled="busy" @click="pick(state.you.uid)">I won</Button>
+        <Button v-if="state.opponent" :disabled="busy" @click="pick(state.opponent.uid)">
           {{ state.opponent.name }} won
         </Button>
         <Button variant="ghost" @click="picking = false">Back</Button>
       </template>
       <template v-else>
         <Button variant="secondary" @click="picking = true">Pick winner</Button>
-        <Button variant="outline" @click="askCancel">Cancel match</Button>
+        <Button variant="outline" :disabled="busy" @click="askCancel">Cancel match</Button>
       </template>
     </div>
   </div>
@@ -98,7 +104,8 @@
 const { data: sessionData } = await authClient.getSession()
 const route = useRoute()
 const gameID = route.params.gameID as string
-const { state, incrementScore, proposeWinner, confirmResult, rejectResult, cancelMatch } = await useGameState(gameID)
+const { state, busy, incrementScore, proposeWinner, confirmResult, rejectResult, cancelMatch } =
+  await useGameState(gameID)
 
 const picking = ref(false)
 

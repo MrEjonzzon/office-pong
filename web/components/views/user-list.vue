@@ -56,14 +56,19 @@
               </Button>
             </template>
 
-            <!-- result proposed by me: waiting -->
-            <Button
-              v-else-if="player.status === 'awaiting' && player.challenge?.proposedBy === myId"
-              class="h-9 w-14 p-3"
-              variant="secondary"
-              disabled>
-              <Icon name="lucide:clock-fading" class="size-full" />
-            </Button>
+            <!-- result proposed by me: waiting, or cancel if the opponent left -->
+            <template v-else-if="player.status === 'awaiting' && player.challenge?.proposedBy === myId">
+              <Button class="h-9 w-14 p-3" variant="secondary" disabled>
+                <Icon name="lucide:clock-fading" class="size-full" />
+              </Button>
+              <Button
+                class="h-9 w-9 p-2"
+                variant="ghost"
+                :disabled="loadingIds[player.id]"
+                @click="askCancel(player)">
+                <Icon name="lucide:x" class="size-full" />
+              </Button>
+            </template>
 
             <!-- result proposed by the opponent: confirm or reject -->
             <template v-else-if="player.status === 'awaiting'">
@@ -319,11 +324,12 @@ const declineChallenge = async (player: PlayerRow) => {
   loadingIds[player.id] = false
 }
 
-const answerResult = async (player: PlayerRow, action: 'confirm' | 'reject') => {
+const answerResult = async (player: PlayerRow, action: 'confirm' | 'reject' | 'cancel') => {
   if (!player.challenge?.gameId) return
   loadingIds[player.id] = true
+  const path = action === 'cancel' ? 'cancel' : `result/${action}`
   const err = await $fetch(
-    `${config.public.apiBasedUrl}/v1/game/${player.challenge.gameId}/result/${action}`,
+    `${config.public.apiBasedUrl}/v1/game/${player.challenge.gameId}/${path}`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -336,6 +342,10 @@ const answerResult = async (player: PlayerRow, action: 'confirm' | 'reject') => 
   }
   await executeGetChallenges()
   loadingIds[player.id] = false
+}
+
+const askCancel = (player: PlayerRow) => {
+  if (confirm('Cancel this match? No result is saved.')) answerResult(player, 'cancel')
 }
 </script>
 
