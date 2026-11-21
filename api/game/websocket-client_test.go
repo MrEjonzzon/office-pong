@@ -91,3 +91,22 @@ func TestRefreshAfterRejectRestartsScore(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotDoesNotShareLivePlayers(t *testing.T) {
+	db, gameID := setupGame(t)
+	h := CreateHub(gameID, db)
+	joinBoth(h)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			h.applyScoreUpdate("luke", 1)
+			h.applyScoreUpdate("luke", -1)
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		pack("state", h.snapshot())
+	}
+	<-done
+}

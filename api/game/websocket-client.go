@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -23,8 +24,7 @@ var upgrader = websocket.Upgrader{
 
 // GameState is the per-game JSON state replicated to all clients
 type GameState struct {
-	ID string `json:"id"`
-	// Score     map[string]int    `json:"score"`
+	ID         string            `json:"id"`
 	Serving    string            `json:"serving,omitempty"`
 	Status     string            `json:"status"` // same values as games.state
 	Version    int               `json:"version"`
@@ -135,7 +135,10 @@ func deref(s *string) string {
 func (h *Hub) snapshot() GameState {
 	h.stateMu.RLock()
 	defer h.stateMu.RUnlock()
-	return h.state
+	s := h.state
+	// the copy is sent without the lock, so it must not share the live map
+	s.Players = maps.Clone(h.state.Players)
+	return s
 }
 
 func (h *Hub) ensurePlayer(player Player) {
@@ -160,18 +163,18 @@ func (h *Hub) ensurePlayer(player Player) {
 	h.state.UpdatedAt = time.Now()
 }
 
-func (h *Hub) applyScoreUpdate(uid string, delta int) GameState {
+func (h *Hub) applyScoreUpdate(uid string, delta int) {
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
 
 	// no scoring until both players are in, or once a result is proposed
 	if h.state.Status != "ongoing" || len(h.state.Players) < 2 {
-		return h.state
+		return
 	}
 
 	player, ok := h.state.Players[uid]
 	if !ok {
-		return h.state
+		return
 	}
 
 	// clamp delta to reasonable bounds
@@ -226,7 +229,6 @@ func (h *Hub) applyScoreUpdate(uid string, delta int) GameState {
 	h.state.UpdatedAt = time.Now()
 
 	fmt.Println("New game state:", h.state)
-	return h.state
 }
 
 func raw(v any) json.RawMessage {
@@ -418,9 +420,8 @@ func WSHandler(db *sql.DB) http.HandlerFunc {
 				if err := json.Unmarshal(env.Payload, &upd); err != nil {
 					continue
 				}
-				newState := h.applyScoreUpdate(uid, upd.Delta)
-				// broadcast the full new state
-				h.broadcast <- pack("state", newState)
+				h.applyScoreUpdate(uid, upd.Delta)
+				h.broadcast <- pack("state", h.snapshot())
 			case "state:request":
 				// push a broadcast with current state
 				h.broadcast <- pack("state", h.snapshot())

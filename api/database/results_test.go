@@ -141,6 +141,20 @@ func TestCancelFreesChallenge(t *testing.T) {
 	}
 }
 
+func TestCancelWaitingResultClearsProposal(t *testing.T) {
+	db, game := setup(t)
+	noErr(t, mdb.ProposeResult(db, game, "luke", "luke", "11-7"))
+	noErr(t, mdb.CancelGame(db, game, "luke"))
+
+	g := mustGame(t, db, game)
+	if g.State != "cancelled" || g.WinnerID != nil || g.Score != nil || g.ProposedBy != nil {
+		t.Fatalf("unexpected game %+v", g)
+	}
+	if s := challengeState(t, db, game); s != "complete" {
+		t.Fatalf("challenge state %s", s)
+	}
+}
+
 func TestCancelCompletedConflicts(t *testing.T) {
 	db, game := setup(t)
 	noErr(t, mdb.ProposeResult(db, game, "luke", "luke", "11-7"))

@@ -90,10 +90,10 @@ func ConfirmResult(db *sql.DB, gameID, userID string) error {
 		loserID = g.Challengee
 	}
 	var winnerMMR, loserMMR int
-	if err := tx.QueryRow(`SELECT "mmr" FROM "user_stats" WHERE "userId" = $1`, winnerID).Scan(&winnerMMR); err != nil {
+	if err := tx.QueryRow(`SELECT "mmr" FROM "user_stats" WHERE "userId" = $1 FOR UPDATE`, winnerID).Scan(&winnerMMR); err != nil {
 		return err
 	}
-	if err := tx.QueryRow(`SELECT "mmr" FROM "user_stats" WHERE "userId" = $1`, loserID).Scan(&loserMMR); err != nil {
+	if err := tx.QueryRow(`SELECT "mmr" FROM "user_stats" WHERE "userId" = $1 FOR UPDATE`, loserID).Scan(&loserMMR); err != nil {
 		return err
 	}
 	winnerDelta, loserDelta := GetRatingChange(winnerMMR, loserMMR, true, KFactor(g.BestOf))
