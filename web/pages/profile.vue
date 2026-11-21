@@ -8,6 +8,22 @@
         <p class="py-0">MecRating : {{ stats?.mmr ?? '...' }}</p>
         <p class="py-0">Wins : {{ stats?.wins ?? '...' }}</p>
         <p class="py-0">Losses : {{ stats?.losses ?? '...' }}</p>
+        <p class="py-0">K/D : {{ stats ? kd(stats.wins, stats.losses) : '...' }}</p>
+      </div>
+
+      <div class="w-full max-w-80 divide-y divide-border">
+        <p v-if="!rows.length" class="py-2 text-center text-sm text-muted-foreground">
+          No matches yet
+        </p>
+        <div v-for="row in rows" :key="row.id" class="flex items-center gap-3 py-2">
+          <NuxtImg v-if="row.image" :src="row.image" class="size-8 shrink-0 rounded-full" />
+          <div v-else class="size-8 shrink-0 rounded-full bg-muted" />
+          <span class="flex-1 truncate font-medium">{{ row.name }}</span>
+          <span class="text-sm">{{ row.wins }}–{{ row.losses }}</span>
+          <span class="w-12 text-right text-xs text-muted-foreground">
+            {{ kd(row.wins, row.losses) }}
+          </span>
+        </div>
       </div>
 
       <Button class="rounded-full px-6 py-2" @click="handleSignOut">Sign Out</Button>
@@ -30,7 +46,7 @@
 import { ref } from 'vue'
 import { authClient } from '~/lib/client'
 import { useRouter } from 'vue-router'
-import type { APIUserStats } from '~/types/api'
+import type { APIChallenge, APIGetResponse, APIUser, APIUserStats } from '~/types/api'
 import { toast } from '~/components/ui/toast/use-toast'
 
 definePageMeta({
@@ -61,6 +77,23 @@ async function handleSignOut() {
 const stats = ref()
 onMounted(async () => {
   stats.value = await getUserStats(sessionData?.user.id)
+})
+
+const { data: challenges } = await useFetch<APIGetResponse<APIChallenge[]>>(
+  `${config.public.apiBasedUrl}/v1/user/${sessionData?.user.id}/challenges`,
+  { headers: { Authorization: `Bearer ${token}` }, server: false }
+)
+const { data: users } = await useFetch<APIGetResponse<APIUser[]>>(
+  `${config.public.apiBasedUrl}/v1/users`,
+  { headers: { Authorization: `Bearer ${token}` }, server: false }
+)
+
+const rows = computed(() => {
+  const record = headToHead(challenges.value?.data ?? [], sessionData?.user.id ?? '')
+  return (users.value?.data ?? [])
+    .filter(u => record[u.id])
+    .map(u => ({ ...u, ...record[u.id] }))
+    .sort((a, b) => b.wins + b.losses - (a.wins + a.losses))
 })
 
 const getUserStats = async (userId?: string): Promise<APIUserStats | undefined> => {
