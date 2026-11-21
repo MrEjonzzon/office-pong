@@ -13,10 +13,10 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 
 ## Deploy (Portainer + Cloudflare Tunnel)
 
-`compose.yml` runs everything: Postgres, the Go API, the Nuxt web app, a daily DB backup and a Caddy proxy on `127.0.0.1:8090`. It assumes `cloudflared` already runs on the host.
+`compose.yml` runs everything: Postgres, the Go API, the Nuxt web app, a daily DB backup and a Caddy proxy on `127.0.0.1:8090`. It needs `cloudflared` on the host network. On the home server, it runs as the `cloudflared` stack from the Home-Network-Conf repo.
 
 1. **Tunnel:** in your Cloudflare tunnel, add a published application: hostname `pingis.emiljo.com`, service `HTTP` → `localhost:8090`.
-2. **Backup folder** (one time, on the server):
+2. **Backup folder** (one time, on the server): `setup.sh` in Home-Network-Conf creates it. By hand:
    `mkdir -p /tank/Data/backups/pingis && chown -R 999:999 /tank/Data/backups/pingis`
 3. **Portainer:** Stacks → Add stack → **Repository**. Repository URL `https://github.com/MrEjonzzon/office-pong`, reference `refs/heads/main`, compose path `compose.yml`.
 4. **Environment variables:** `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and `ADMIN_PASSWORD` (see `stack.env.example`; generate with `openssl rand -hex 16`, `openssl rand -hex 32` and `openssl rand -base64 24 | tr -d '/+='`). `ADMIN_USERNAME` defaults to `admin`. Don't change `POSTGRES_PASSWORD` after the first deploy.

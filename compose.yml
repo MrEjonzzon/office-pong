@@ -76,7 +76,7 @@ services:
       BACKUP_KEEP_WEEKS: 4
       BACKUP_KEEP_MONTHS: 6
     volumes:
-      - ${BACKUP_DIR:-/tank/shared/nas-shared/backups/pingis}:/backups
+      - ${BACKUP_DIR:-/tank/Data/backups/pingis}:/backups
     depends_on:
       postgres:
         condition: service_healthy
