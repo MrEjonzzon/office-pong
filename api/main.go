@@ -241,34 +241,22 @@ func declineChallengeHandler(db *sql.DB) http.HandlerFunc {
 }
 
 /* Game results */
-type GameActionResponse struct {
-	Data string `json:"data"`
-}
-
 func gameActionHandler(db *sql.DB, action func(db *sql.DB, gameID, userID string) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		uid, ok := mw.UserIDFromContext(r.Context())
-		if !ok {
-			encodeError(fmt.Errorf("unauthorized"), w, http.StatusUnauthorized)
-			return
-		}
+		uid, _ := mw.UserIDFromContext(r.Context())
 		gameID := mux.Vars(r)["id"]
 		if err := action(db, gameID, uid); err != nil {
 			encodeError(err, w, gameErrorStatus(err))
 			return
 		}
 		gamews.RefreshHub(db, gameID)
-		encodeResponse(w, GameActionResponse{Data: "ok"}, http.StatusOK)
+		encodeResponse(w, SendChallengeResponse{Data: "ok"}, http.StatusOK)
 	}
 }
 
 func proposeResultHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		uid, ok := mw.UserIDFromContext(r.Context())
-		if !ok {
-			encodeError(fmt.Errorf("unauthorized"), w, http.StatusUnauthorized)
-			return
-		}
+		uid, _ := mw.UserIDFromContext(r.Context())
 		var body struct {
 			WinnerID string `json:"winnerId"`
 		}
@@ -282,7 +270,7 @@ func proposeResultHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		gamews.RefreshHub(db, gameID)
-		encodeResponse(w, GameActionResponse{Data: "ok"}, http.StatusOK)
+		encodeResponse(w, SendChallengeResponse{Data: "ok"}, http.StatusOK)
 	}
 }
 

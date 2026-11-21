@@ -1,5 +1,6 @@
 import { useWebSocket, type UseWebSocketOptions } from '@vueuse/core'
 import { toast } from '~/components/ui/toast/use-toast'
+import type { GameStatus } from '~/types/api'
 
 interface Player {
   uid: string
@@ -14,7 +15,7 @@ interface GameState {
   opponent?: Player
   // opponentScore: number
   serving?: string
-  status: 'ongoing' | 'awaiting_confirmation' | 'completed' | 'cancelled'
+  status: GameStatus
   winner?: string
   proposedBy?: string
   score?: string

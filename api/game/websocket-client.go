@@ -177,14 +177,7 @@ func (h *Hub) applyScoreUpdate(uid string, delta int) {
 		return
 	}
 
-	// clamp delta to reasonable bounds
-	if delta > 1 {
-		delta = 1
-	}
-	if delta < -1 {
-		delta = -1
-	}
-	player.Score += delta
+	player.Score += max(-1, min(1, delta))
 	if player.Score < 0 {
 		player.Score = 0
 	}
