@@ -7,6 +7,9 @@ export interface APIChallenge {
   createdAt: string
   gameId?: string
   bestOf: number
+  gameState?: 'ongoing' | 'awaiting_confirmation' | 'completed' | 'cancelled'
+  winnerId?: string
+  proposedBy?: string
 }
 export type ChallengeState = 'pending' | 'active' | 'denied' | 'complete'
 
