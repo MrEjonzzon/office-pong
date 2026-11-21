@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -175,24 +174,6 @@ func (h *Hub) applyScoreUpdate(uid string, delta int) GameState {
 		if player.SetsWon >= SetsToWin(h.state.BestOf) {
 			h.state.Status = "finished"
 			h.state.Meta = map[string]string{"winner": player.UID}
-
-			// set scores from the winner's point of view, e.g. "11-7, 9-11, 12-10"
-			parts := make([]string, 0, len(h.state.Sets))
-			for _, set := range h.state.Sets {
-				parts = append(parts, fmt.Sprintf("%d-%d", set[player.UID], set[opponent.UID]))
-			}
-
-			go func(db *sql.DB, gameID, winnerID, loserID string, bestOf int, score string) {
-				winnerMMR, loserMMR, err := mdb.UpdateMMRAfterGame(db, winnerID, loserID, bestOf)
-				if err != nil {
-					fmt.Println("[websocket-client.go] error updating MMR", err)
-					return
-				}
-				fmt.Printf("MMR UPDATE - winner %s: %d, loser: %s: %d\n", winnerID, winnerMMR, loserID, loserMMR)
-				if err := mdb.CompleteGame(db, gameID, winnerID, score); err != nil {
-					fmt.Println("[websocket-client.go] error completing game", err)
-				}
-			}(h.db, h.ID, player.UID, opponent.UID, h.state.BestOf, strings.Join(parts, ", "))
 		}
 	}
 
@@ -273,9 +254,9 @@ func CreateHub(id string, db *sql.DB) *Hub {
 	if h, ok := hubs[id]; ok {
 		return h
 	}
-	bestOf, err := mdb.GetGameBestOf(db, id)
-	if err != nil || !ValidBestOf(bestOf) {
-		bestOf = 1
+	bestOf := 1
+	if g, err := mdb.GetGame(db, id); err == nil && ValidBestOf(g.BestOf) {
+		bestOf = g.BestOf
 	}
 	h := newHub(id, db, bestOf)
 	hubs[id] = h
