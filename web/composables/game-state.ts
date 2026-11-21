@@ -1,5 +1,6 @@
 import { useWebSocket, type UseWebSocketOptions } from '@vueuse/core'
 import { toast } from '~/components/ui/toast/use-toast'
+import type { GameStatus } from '~/types/api'
 
 interface Player {
   uid: string
@@ -14,8 +15,10 @@ interface GameState {
   opponent?: Player
   // opponentScore: number
   serving?: string
-  status: string
+  status: GameStatus
   winner?: string
+  proposedBy?: string
+  score?: string
   bestOf: number
   sets: Record<string, number>[] // completed sets, uid -> points
   isDeuce: boolean
@@ -26,7 +29,9 @@ interface GameResponseState {
   payload: {
     id: string
     serving?: string
-    status: string
+    status: GameState['status']
+    proposedBy?: string
+    score?: string
     version: number
     bestOf: number
     sets?: Record<string, number>[]
@@ -68,6 +73,10 @@ export async function useGameState(gameID: string) {
   if(!gameID) throw new Error('gameID is required')
 
   initializeWebsocketConnection(gameID, sessionData, {
+    autoReconnect: { delay: 1000 },
+    // Cloudflare closes a websocket after ~100s without data. The server answers
+    // state:request with the current state, so this keeps the line open and resyncs the score.
+    heartbeat: { message: JSON.stringify({ type: 'state:request' }), interval: 30_000, pongTimeout: 10_000 },
     onMessage: async (ws, event) => {
       console.log('Message from server: ', event.data)
       await messageResponseHandler(event)
@@ -79,7 +88,6 @@ export async function useGameState(gameID: string) {
     onDisconnected: (ws, event) => {
       console.log('Disconnected from server ', event)
       connected.value = false
-      websocket.value?.close()
       if (event.code !== 1000) {
         toast({ title: 'Disconnected', description: 'Lost connection to the game server.', variant: 'destructive' })
       }
@@ -125,6 +133,8 @@ export async function useGameState(gameID: string) {
       serving: data.payload.serving,
       status: data.payload.status,
       winner: data.payload.meta?.winner,
+      proposedBy: data.payload.proposedBy,
+      score: data.payload.score,
       bestOf: data.payload.bestOf || 1,
       sets: data.payload.sets ?? [],
       isDeuce:
@@ -143,8 +153,8 @@ export async function useGameState(gameID: string) {
       return
     }
 
-    if (state.value?.status === 'finished') {
-      console.warn("can't update a finished game bozo")
+    if (state.value?.status !== 'ongoing') {
+      console.warn("can't update a game that is not ongoing")
       return
     }
 
@@ -165,7 +175,6 @@ export async function useGameState(gameID: string) {
     const message = {
       type: 'score:update',
       payload: {
-        userId: state.value.you.uid,
         delta: 1,
       },
     }
@@ -173,9 +182,41 @@ export async function useGameState(gameID: string) {
     websocket.value.send(JSON.stringify(message))
   }
 
+  const busy = ref(false)
+  const postAction = async (path: string, body?: Record<string, string>) => {
+    if (busy.value) return
+    busy.value = true
+    const config = useRuntimeConfig()
+    try {
+      await $fetch(`${config.public.apiBasedUrl}/v1/game/${gameID}/${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionData?.session.token}` },
+        body,
+      })
+    } catch (e: any) {
+      toast({
+        title: 'Something went wrong',
+        description: e?.data?.error ?? 'Could not reach the game server.',
+        variant: 'destructive',
+      })
+    } finally {
+      busy.value = false
+    }
+  }
+
+  const proposeWinner = (winnerId: string) => postAction('result', { winnerId })
+  const confirmResult = () => postAction('result/confirm')
+  const rejectResult = () => postAction('result/reject')
+  const cancelMatch = () => postAction('cancel')
+
   return {
     connected,
     state,
+    busy,
     incrementScore,
+    proposeWinner,
+    confirmResult,
+    rejectResult,
+    cancelMatch,
   }
 }

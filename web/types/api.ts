@@ -7,8 +7,12 @@ export interface APIChallenge {
   createdAt: string
   gameId?: string
   bestOf: number
+  gameState?: GameStatus
+  winnerId?: string
+  proposedBy?: string
 }
 export type ChallengeState = 'pending' | 'active' | 'denied' | 'complete'
+export type GameStatus = 'ongoing' | 'awaiting_confirmation' | 'completed' | 'cancelled'
 
 export interface APIUserStats {
   userId: string

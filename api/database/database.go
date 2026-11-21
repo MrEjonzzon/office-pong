@@ -49,7 +49,7 @@ func GetUserByID(db *sql.DB, id string) (*UserV2, error) {
 func GetChallenges(db *sql.DB, id string) ([]Challenge, error) {
 	//TODO: allow for querying maybe in the future
 	query := `
-        SELECT c."id", c."challenger", c."challengee", c."state", c."createdBy", c."createdAt", g."id", c."bestOf"
+        SELECT c."id", c."challenger", c."challengee", c."state", c."createdBy", c."createdAt", g."id", c."bestOf", g."state", g."winnerId", g."proposedBy"
         FROM "challenges" c
         LEFT JOIN "games" g ON g."challengeId" = c."id"
         WHERE (c.challenger = $1 OR c.challengee = $1)
@@ -64,7 +64,7 @@ func GetChallenges(db *sql.DB, id string) ([]Challenge, error) {
 	var challenges []Challenge
 	for rows.Next() {
 		var c Challenge
-		if err := rows.Scan(&c.ID, &c.Challenger, &c.Challengee, &c.State, &c.CreatedBy, &c.CreatedAt, &c.GameID, &c.BestOf); err != nil {
+		if err := rows.Scan(&c.ID, &c.Challenger, &c.Challengee, &c.State, &c.CreatedBy, &c.CreatedAt, &c.GameID, &c.BestOf, &c.GameState, &c.WinnerID, &c.ProposedBy); err != nil {
 			log.Println("scan error:", err)
 			continue
 		}
@@ -278,71 +278,6 @@ func GetUserMMR(db *sql.DB, userID string) (int, error) {
 		return 1500, nil
 	}
 	return mmr, err
-}
-
-func UpdateMMRAfterGame(db *sql.DB, winnerID, loserID string, bestOf int) (int, int, error) {
-	winnerMMR, err := GetUserMMR(db, winnerID)
-	if err != nil {
-		return 0, 0, fmt.Errorf("error getting winner MMR: %v", err)
-	}
-	loserMMR, err := GetUserMMR(db, loserID)
-	if err != nil {
-		return 0, 0, fmt.Errorf("error getting loser MMR: %v", err)
-	}
-
-	winnerDelta, loserDelta := GetRatingChange(winnerMMR, loserMMR, true, KFactor(bestOf))
-
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, 0, err
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec(`
-        UPDATE "user_stats" SET "mmr" = "mmr" + $1, "wins" = "wins" + 1, "updatedAt" = NOW()
-        WHERE "userId" = $2
-    `, winnerDelta, winnerID)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	_, err = tx.Exec(`
-        UPDATE "user_stats" SET "mmr" = "mmr" + $1, "losses" = "losses" + 1, "updatedAt" = NOW()
-        WHERE "userId" = $2
-    `, loserDelta, loserID)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, 0, err
-	}
-
-	return winnerMMR + winnerDelta, loserMMR + loserDelta, nil
-}
-
-// GetGameBestOf returns the match format (number of sets) chosen when the game was challenged.
-func GetGameBestOf(db *sql.DB, gameID string) (int, error) {
-	var bestOf int
-	err := db.QueryRow(`
-        SELECT c."bestOf" FROM "games" g
-        JOIN "challenges" c ON c."id" = g."challengeId"
-        WHERE g."id" = $1
-    `, gameID).Scan(&bestOf)
-	return bestOf, err
-}
-
-func CompleteGame(db *sql.DB, gameID, winnerID, score string) error {
-	_, err := db.Exec(`UPDATE "games" SET "state" = 'completed', "winnerId" = $2, "score" = $3 WHERE "id" = $1`, gameID, winnerID, score)
-	if err != nil {
-		return fmt.Errorf("error completing game: %v", err)
-	}
-
-	_, err = db.Exec(`
-        UPDATE "challenges" SET "state" = 'complete'
-        WHERE "id" = (SELECT "challengeId" FROM "games" WHERE "id" = $1)
-    `, gameID)
-	return err
 }
 
 /* AUTH */

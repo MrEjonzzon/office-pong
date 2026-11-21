@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 
@@ -9,6 +10,13 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+type ctxKey struct{}
+
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	uid, ok := ctx.Value(ctxKey{}).(string)
+	return uid, ok
+}
 
 func AuthMiddleware(db *sql.DB) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
@@ -32,12 +40,13 @@ func AuthMiddleware(db *sql.DB) mux.MiddlewareFunc {
 				return
 			}
 
-			if _, err := mdb.VerifyUserToken(db, token); err != nil {
+			uid, err := mdb.VerifyUserToken(db, token)
+			if err != nil {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, uid)))
 		})
 	}
 }

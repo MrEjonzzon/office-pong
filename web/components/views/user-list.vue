@@ -25,7 +25,12 @@
           <NuxtImg v-if="player.image" :src="player.image" class="size-8 shrink-0 rounded-full" />
           <div v-else class="size-8 shrink-0 rounded-full bg-muted" />
 
-          <span class="flex-1 truncate font-medium">{{ player.name }}</span>
+          <span class="flex-1 truncate font-medium">
+            {{ player.name }}
+            <span v-if="record[player.id]" class="ml-1 text-xs font-normal text-muted-foreground">
+              {{ record[player.id].wins }}–{{ record[player.id].losses }}
+            </span>
+          </span>
           <span
             v-if="player.challenge && player.status !== 'none'"
             class="shrink-0 text-xs text-muted-foreground">
@@ -48,6 +53,41 @@
                 :disabled="loadingIds[player.id]"
                 @click="declineChallenge(player)">
                 Deny
+              </Button>
+            </template>
+
+            <!-- result proposed by me: waiting, or cancel if the opponent left -->
+            <template v-else-if="player.status === 'awaiting' && player.challenge?.proposedBy === myId">
+              <Button class="h-9 w-14 p-3" variant="secondary" disabled>
+                <Icon name="lucide:clock-fading" class="size-full" />
+              </Button>
+              <Button
+                class="h-9 w-9 p-2"
+                variant="ghost"
+                :disabled="loadingIds[player.id]"
+                @click="askCancel(player)">
+                <Icon name="lucide:x" class="size-full" />
+              </Button>
+            </template>
+
+            <!-- result proposed by the opponent: confirm or reject -->
+            <template v-else-if="player.status === 'awaiting'">
+              <span class="self-center text-xs text-muted-foreground">
+                {{ proposalText(player) }}
+              </span>
+              <Button
+                class="h-9"
+                variant="default"
+                :disabled="loadingIds[player.id]"
+                @click="answerResult(player, 'confirm')">
+                Confirm
+              </Button>
+              <Button
+                class="h-9"
+                variant="destructive"
+                :disabled="loadingIds[player.id]"
+                @click="answerResult(player, 'reject')">
+                Reject
               </Button>
             </template>
 
@@ -170,6 +210,7 @@ watch(
       if (
         c.challenger === session.value?.user.id &&
         c.state === 'active' &&
+        c.gameState !== 'awaiting_confirmation' &&
         c.gameId &&
         !navigatedGameIds.has(c.gameId)
       ) {
@@ -181,12 +222,15 @@ watch(
   }
 )
 
+const myId = computed(() => session.value?.user.id)
+const record = computed(() => headToHead(challenges.value?.data ?? [], myId.value ?? ''))
+
 /* Unified player list */
 type PlayerRow = {
   id: string
   name: string
   image: string
-  status: 'none' | 'incoming' | 'outgoing' | 'active'
+  status: 'none' | 'incoming' | 'outgoing' | 'active' | 'awaiting'
   challenge?: APIChallenge
 }
 
@@ -205,11 +249,20 @@ const allPlayers = computed<PlayerRow[]>(() => {
       )
 
       if (!challenge) return { ...u, status: 'none' as const }
+      if (challenge.gameState === 'awaiting_confirmation')
+        return { ...u, status: 'awaiting' as const, challenge }
       if (challenge.state === 'active') return { ...u, status: 'active' as const, challenge }
       if (challenge.challenger === myId) return { ...u, status: 'outgoing' as const, challenge }
       return { ...u, status: 'incoming' as const, challenge }
     })
 })
+
+const proposalText = (player: PlayerRow) => {
+  const c = player.challenge
+  if (!c) return ''
+  const nameOf = (id?: string) => (id === myId.value ? 'you' : player.name)
+  return `${nameOf(c.proposedBy)} says ${nameOf(c.winnerId)} won`
+}
 
 /* Actions */
 const createChallenge = async (player: PlayerRow, bestOf: number) => {
@@ -269,6 +322,30 @@ const declineChallenge = async (player: PlayerRow) => {
   }
   await executeGetChallenges()
   loadingIds[player.id] = false
+}
+
+const answerResult = async (player: PlayerRow, action: 'confirm' | 'reject' | 'cancel') => {
+  if (!player.challenge?.gameId) return
+  loadingIds[player.id] = true
+  const path = action === 'cancel' ? 'cancel' : `result/${action}`
+  const err = await $fetch(
+    `${config.public.apiBasedUrl}/v1/game/${player.challenge.gameId}/${path}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  )
+    .then(() => null)
+    .catch(e => e)
+  if (err) {
+    toast({ title: `Failed to ${action} result`, variant: 'destructive' })
+  }
+  await executeGetChallenges()
+  loadingIds[player.id] = false
+}
+
+const askCancel = (player: PlayerRow) => {
+  if (confirm('Cancel this match? No result is saved.')) answerResult(player, 'cancel')
 }
 </script>
 

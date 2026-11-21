@@ -14,6 +14,15 @@ type Challenge struct {
 	CreatedAt  time.Time `json:"createdAt"`
 	GameID     *string   `json:"gameId,omitempty"`
 	BestOf     int       `json:"bestOf"`
+	GameState  *string   `json:"gameState,omitempty"`
+	WinnerID   *string   `json:"winnerId,omitempty"`
+	ProposedBy *string   `json:"proposedBy,omitempty"`
+}
+
+type Game struct {
+	ID, ChallengeID, State, Challenger, Challengee string
+	BestOf                                         int
+	WinnerID, Score, ProposedBy                    *string
 }
 type UserV2 struct {
 	ID            string    `json:"id"`

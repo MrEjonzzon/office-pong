@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -23,16 +24,17 @@ var upgrader = websocket.Upgrader{
 
 // GameState is the per-game JSON state replicated to all clients
 type GameState struct {
-	ID string `json:"id"`
-	// Score     map[string]int    `json:"score"`
-	Serving   string            `json:"serving,omitempty"`
-	Status    string            `json:"status"` // playing, paused, finished
-	Version   int               `json:"version"`
-	Players   map[string]Player `json:"players"`
-	BestOf    int               `json:"bestOf"`
-	Sets      []map[string]int  `json:"sets"` // completed sets, uid -> points
-	UpdatedAt time.Time         `json:"updatedAt"`
-	Meta      map[string]string `json:"meta,omitempty"`
+	ID         string            `json:"id"`
+	Serving    string            `json:"serving,omitempty"`
+	Status     string            `json:"status"` // same values as games.state
+	Version    int               `json:"version"`
+	Players    map[string]Player `json:"players"`
+	BestOf     int               `json:"bestOf"`
+	Sets       []map[string]int  `json:"sets"` // completed sets, uid -> points
+	UpdatedAt  time.Time         `json:"updatedAt"`
+	Meta       map[string]string `json:"meta,omitempty"`
+	ProposedBy string            `json:"proposedBy,omitempty"`
+	Score      string            `json:"score,omitempty"`
 }
 
 // Envelope wraps all websocket messages
@@ -41,10 +43,8 @@ type Envelope struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
-// ScoreUpdate uses userId to identify the player to update
 type ScoreUpdate struct {
-	UserID string `json:"userId"`
-	Delta  int    `json:"delta"`
+	Delta int `json:"delta"`
 }
 
 type Participants struct {
@@ -92,7 +92,7 @@ func newHub(id string, db *sql.DB, bestOf int) *Hub {
 		ID:        id,
 		Players:   make(map[string]Player),
 		Serving:   "",
-		Status:    "playing",
+		Status:    "ongoing",
 		BestOf:    bestOf,
 		Sets:      []map[string]int{},
 		Version:   1,
@@ -101,10 +101,44 @@ func newHub(id string, db *sql.DB, bestOf int) *Hub {
 	return h
 }
 
+// loadFromGame copies the stored game state into the hub, so a new or refreshed hub matches the database.
+func (h *Hub) loadFromGame(g *mdb.Game) {
+	h.stateMu.Lock()
+	defer h.stateMu.Unlock()
+
+	h.state.Status = g.State
+	h.state.ProposedBy = deref(g.ProposedBy)
+	h.state.Score = deref(g.Score)
+	h.state.Meta = nil
+	if g.WinnerID != nil {
+		h.state.Meta = map[string]string{"winner": *g.WinnerID}
+	}
+	// a rejected result sends the game back to ongoing, and the players replay from 0-0
+	if g.State == "ongoing" {
+		for uid, p := range h.state.Players {
+			p.Score, p.SetsWon = 0, 0
+			h.state.Players[uid] = p
+		}
+		h.state.Sets = []map[string]int{}
+	}
+	h.state.Version++
+	h.state.UpdatedAt = time.Now()
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func (h *Hub) snapshot() GameState {
 	h.stateMu.RLock()
 	defer h.stateMu.RUnlock()
-	return h.state
+	s := h.state
+	// the copy is sent without the lock, so it must not share the live map
+	s.Players = maps.Clone(h.state.Players)
+	return s
 }
 
 func (h *Hub) ensurePlayer(player Player) {
@@ -129,28 +163,21 @@ func (h *Hub) ensurePlayer(player Player) {
 	h.state.UpdatedAt = time.Now()
 }
 
-func (h *Hub) applyScoreUpdate(update ScoreUpdate) GameState {
+func (h *Hub) applyScoreUpdate(uid string, delta int) {
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
 
-	// no scoring until both players are in, or after the match is over
-	if h.state.Status == "finished" || len(h.state.Players) < 2 {
-		return h.state
+	// no scoring until both players are in, or once a result is proposed
+	if h.state.Status != "ongoing" || len(h.state.Players) < 2 {
+		return
 	}
 
-	player, ok := h.state.Players[update.UserID]
+	player, ok := h.state.Players[uid]
 	if !ok {
-		return h.state
+		return
 	}
 
-	// clamp delta to reasonable bounds
-	if update.Delta > 1 {
-		update.Delta = 1
-	}
-	if update.Delta < -1 {
-		update.Delta = -1
-	}
-	player.Score += update.Delta
+	player.Score += max(-1, min(1, delta))
 	if player.Score < 0 {
 		player.Score = 0
 	}
@@ -175,26 +202,19 @@ func (h *Hub) applyScoreUpdate(update ScoreUpdate) GameState {
 		h.state.Players[opponent.UID] = opponent
 
 		if player.SetsWon >= SetsToWin(h.state.BestOf) {
-			h.state.Status = "finished"
-			h.state.Meta = map[string]string{"winner": player.UID}
-
-			// set scores from the winner's point of view, e.g. "11-7, 9-11, 12-10"
-			parts := make([]string, 0, len(h.state.Sets))
-			for _, set := range h.state.Sets {
-				parts = append(parts, fmt.Sprintf("%d-%d", set[player.UID], set[opponent.UID]))
+			sets := make([]string, len(h.state.Sets))
+			for i, set := range h.state.Sets {
+				sets[i] = fmt.Sprintf("%d-%d", set[player.UID], set[opponent.UID])
 			}
-
-			go func(db *sql.DB, gameID, winnerID, loserID string, bestOf int, score string) {
-				winnerMMR, loserMMR, err := mdb.UpdateMMRAfterGame(db, winnerID, loserID, bestOf)
-				if err != nil {
-					fmt.Println("[websocket-client.go] error updating MMR", err)
-					return
-				}
-				fmt.Printf("MMR UPDATE - winner %s: %d, loser: %s: %d\n", winnerID, winnerMMR, loserID, loserMMR)
-				if err := mdb.CompleteGame(db, gameID, winnerID, score); err != nil {
-					fmt.Println("[websocket-client.go] error completing game", err)
-				}
-			}(h.db, h.ID, player.UID, opponent.UID, h.state.BestOf, strings.Join(parts, ", "))
+			score := strings.Join(sets, ", ")
+			if err := mdb.ProposeResult(h.db, h.ID, uid, player.UID, score); err != nil {
+				fmt.Println("could not save proposed result for game", h.ID, ":", err)
+			} else {
+				h.state.Status = "awaiting_confirmation"
+				h.state.ProposedBy = uid
+				h.state.Score = score
+				h.state.Meta = map[string]string{"winner": player.UID}
+			}
 		}
 	}
 
@@ -202,7 +222,6 @@ func (h *Hub) applyScoreUpdate(update ScoreUpdate) GameState {
 	h.state.UpdatedAt = time.Now()
 
 	fmt.Println("New game state:", h.state)
-	return h.state
 }
 
 func raw(v any) json.RawMessage {
@@ -275,14 +294,33 @@ func CreateHub(id string, db *sql.DB) *Hub {
 	if h, ok := hubs[id]; ok {
 		return h
 	}
-	bestOf, err := mdb.GetGameBestOf(db, id)
-	if err != nil || !ValidBestOf(bestOf) {
-		bestOf = 1
+	g, err := mdb.GetGame(db, id)
+	bestOf := 1
+	if err == nil && ValidBestOf(g.BestOf) {
+		bestOf = g.BestOf
 	}
 	h := newHub(id, db, bestOf)
+	if err == nil {
+		h.loadFromGame(g)
+	}
 	hubs[id] = h
 	go h.run()
 	return h
+}
+
+// RefreshHub reloads an open hub from the games row and sends the new state to its clients.
+func RefreshHub(db *sql.DB, gameID string) {
+	h, ok := GetHub(gameID)
+	if !ok {
+		return
+	}
+	g, err := mdb.GetGame(db, gameID)
+	if err != nil {
+		fmt.Println("could not reload game", gameID, ":", err)
+		return
+	}
+	h.loadFromGame(g)
+	h.broadcast <- pack("state", h.snapshot())
 }
 
 // GetHub retrieves an existing hub by id.
@@ -375,13 +413,8 @@ func WSHandler(db *sql.DB) http.HandlerFunc {
 				if err := json.Unmarshal(env.Payload, &upd); err != nil {
 					continue
 				}
-				// If userId not provided, default to sender uid
-				if upd.UserID == "" {
-					upd.UserID = uid
-				}
-				newState := h.applyScoreUpdate(upd)
-				// broadcast the full new state
-				h.broadcast <- pack("state", newState)
+				h.applyScoreUpdate(uid, upd.Delta)
+				h.broadcast <- pack("state", h.snapshot())
 			case "state:request":
 				// push a broadcast with current state
 				h.broadcast <- pack("state", h.snapshot())
