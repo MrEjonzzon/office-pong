@@ -86,7 +86,7 @@ The challenge stays `active` until the result is confirmed. Then it becomes `com
 
 The new routes must get the caller's user ID from the bearer token, not from the URL or the body. Change `AuthMiddleware` so that it puts the user ID from `VerifyUserToken` into the request context, and add a small helper to read it. The existing routes can keep using the path, which is outside this scope.
 
-Also fix the scoring cheat gap: `score:update` always uses the sender's user ID. Ignore `userId` in the payload.
+Also fix the scoring cheat gap: remove `userId` from the `score:update` payload. The hub always scores for the sender, so a client cannot change the score of the opponent.
 
 ### Rules
 
@@ -118,7 +118,8 @@ After a successful call, the handler updates the hub if it is in memory (`GetHub
 
 ### Hub and websocket
 
-- `GameState` gets: `status` value `awaiting_confirmation`, plus `proposedBy` and `score` (the same text as `games.score`). The proposed winner goes in the existing `meta.winner`. Keep the existing hub status names `playing` and `finished` (decision: they map to `ongoing` and `completed` in the database).
+- `GameState.status` uses the same values as `games.state`: `ongoing`, `awaiting_confirmation`, `completed` and `cancelled`. These values replace the hub names `playing` and `finished`, so no mapping is necessary. The frontend changes its `'finished'` checks to `'completed'`.
+- `GameState` also gets `proposedBy` and `score` (the same text as `games.score`). The proposed winner goes in the existing `meta.winner`.
 - `CreateHub` reads the game row (extend the query that already reads `bestOf`). It does not rebuild the points per player from the `score` text. The screen shows the `score` text as it is.
 - If the game is `awaiting_confirmation`, `completed` or `cancelled`, the hub starts in that state with `winnerId`, `score` and `proposedBy`. A reconnecting client then sees the proposal or the result, and scoring stays blocked.
 - Remove the goroutine in `applyScoreUpdate` that updates the ratings and completes the game. Only the confirm route does that now.
@@ -131,7 +132,7 @@ After a successful call, the handler updates the hub if it is in memory (`GetHub
   - The proposer sees "Waiting for <opponent> to confirm".
   - The other player sees "<proposer> says <winner> won (score, if any)" with **Confirm** and **Reject**.
 - When the game is `completed`, the existing "You Win / You Lose" overlay shows.
-- A **"Cancel match"** button, with a confirm prompt, calls the cancel route. When the game is cancelled, both screens show "Match cancelled" with "Back to Home". The hub status for this is `cancelled`.
+- A **"Cancel match"** button, with a confirm prompt, calls the cancel route. When the game is cancelled, both screens show "Match cancelled" with "Back to Home".
 
 ### Home player list (`web/components/views/user-list.vue`)
 

@@ -14,7 +14,7 @@
 
 - Schema changes only as `IF NOT EXISTS` statements, run at API start. No migration tool.
 - One API replica. Live game state stays in memory. Only the proposal is in the database.
-- `games.state` values: `ongoing`, `awaiting_confirmation`, `completed`, `cancelled`. Hub status values: `playing`, `awaiting_confirmation`, `finished`, `cancelled`.
+- `games.state` and the hub `GameState.status` use the same values: `ongoing`, `awaiting_confirmation`, `completed`, `cancelled`. There is no mapping between them.
 - The `challenge_state` enum does not change. A cancelled match sets its challenge to `complete`.
 - The new routes get the caller's user ID from the token (request context), never from the URL or the body.
 - Test fixtures: Star Wars names (`luke`, `vader`, `yoda`), emails on `@example.com`.
@@ -58,9 +58,7 @@ All `go test` commands run in `api/`.
 - Modify: `api/main.go` (call `mdb.CreateSchema`)
 - Create: `api/dbtest/dbtest.go`
 - Modify: `api/middleware/auth.go`
-- Create: `api/middleware/auth_test.go`
-- Modify: `api/game/websocket-client.go` (move the message switch out of `WSHandler`)
-- Create: `api/game/websocket-client_test.go`
+- Modify: `api/game/websocket-client.go` (remove `UserID` from `ScoreUpdate`)
 
 **Interfaces:**
 - Produces:
@@ -69,53 +67,18 @@ All `go test` commands run in `api/`.
   - `dbtest.SeedUser(t *testing.T, db *sql.DB, id, name string)`. Inserts a `user` row (email `<id>@example.com`), a `user_stats` row (1500, 0, 0) and a `session` row with token `token-<id>` that expires in one hour.
   - `dbtest.SeedGame(t *testing.T, db *sql.DB, challenger, challengee string, bestOf int) string`. Calls `CreateChallenge` and `AcceptChallenge`, and returns the game ID.
   - `middleware.UserIDFromContext(ctx context.Context) (string, bool)`. `AuthMiddleware` stores the ID from `VerifyUserToken` in the context. Use an unexported key type.
-  - `middleware.WithUserID(ctx context.Context, uid string) context.Context`. Handler tests use it.
-  - `game.(*Hub).handleMessage(uid string, env Envelope)`. The switch from `WSHandler`. `score:update` always sets `upd.UserID = uid`.
+  - `game.(*Hub).applyScoreUpdate(uid string, delta int) GameState`. `ScoreUpdate` has no `UserID` field, so a client cannot score for the opponent. `WSHandler` calls `h.applyScoreUpdate(uid, upd.Delta)`.
 
-- [ ] **Step 1: Write the failing tests**
+This task adds no new test. `TestConfirmHandlerUsesTokenUser` (Task 3) goes through `AuthMiddleware` and checks the user in the context. The scoring fix is a signature change, so no test is necessary.
 
-```go
-// api/middleware/auth_test.go
-func TestAuthMiddlewarePutsUserInContext(t *testing.T) {
-	db := dbtest.Open(t)
-	dbtest.SeedUser(t, db, "luke", "Luke")
-	var got string
-	h := AuthMiddleware(db)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, _ = UserIDFromContext(r.Context())
-	}))
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("Authorization", "Bearer token-luke")
-	h.ServeHTTP(httptest.NewRecorder(), req)
-	if got != "luke" { t.Fatalf("user in context = %q, want luke", got) }
-}
+- [ ] **Step 1: Implement the interfaces above.** `main()` keeps only `if err := mdb.CreateSchema(db); err != nil { log.Fatalf(...) }`.
 
-// api/game/websocket-client_test.go (no database needed)
-func TestScoreUpdateUsesSender(t *testing.T) {
-	h := newHub("g1", nil, 1)
-	h.ensurePlayer(Player{UID: "luke"})
-	h.ensurePlayer(Player{UID: "vader"})
-	go func() { for range h.broadcast {} }()
-	h.handleMessage("luke", Envelope{Type: "score:update", Payload: raw(ScoreUpdate{UserID: "vader", Delta: 1})})
-	s := h.snapshot()
-	if s.Players["luke"].Score != 1 || s.Players["vader"].Score != 0 {
-		t.Fatalf("luke=%d vader=%d, want 1 and 0", s.Players["luke"].Score, s.Players["vader"].Score)
-	}
-}
-```
+- [ ] **Step 2: Run the tests to verify that nothing broke**
 
-- [ ] **Step 2: Run the tests to verify they fail**
+Run: `go test ./... && go vet ./...`
+Expected: PASS (the existing `TestSetWinner` and `TestSetsToWin`).
 
-Run: `go test ./middleware/ ./game/`
-Expected: FAIL. The build fails on `UserIDFromContext`, `handleMessage` and `dbtest` (they do not exist).
-
-- [ ] **Step 3: Implement the interfaces above.** `main()` keeps only `if err := mdb.CreateSchema(db); err != nil { log.Fatalf(...) }`. `WSHandler` calls `h.handleMessage(uid, env)` in its read loop.
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `go test ./...`
-Expected: PASS (including the existing `TestSetWinner` and `TestSetsToWin`).
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add api/
@@ -210,24 +173,28 @@ git commit -m "feat(api): save results only after both players confirm"
 **Files:**
 - Modify: `api/main.go` (4 routes and handlers)
 - Modify: `api/game/websocket-client.go`
-- Modify: `api/game/websocket-client_test.go`
+- Create: `api/game/websocket-client_test.go`
+- Create: `api/main_test.go`
 
 **Interfaces:**
-- Consumes: Task 2 functions and errors, `middleware.UserIDFromContext` and `middleware.WithUserID` (Task 1).
+- Consumes: Task 2 functions and errors, `middleware.UserIDFromContext` (Task 1).
 - Produces:
   - Routes on `protected`: `POST /v1/game/{id}/result` (body `{"winnerId": "..."}`), `POST /v1/game/{id}/result/confirm`, `POST /v1/game/{id}/result/reject`, `POST /v1/game/{id}/cancel`. Errors: `ErrNotPlayer` → 403, `ErrWrongState` → 409, `ErrBadWinner` → 400, other errors → 500. Success → 200 with `{ "data": "ok" }` through `encodeResponse`. No user ID in context → 401.
+  - `gameActionHandler(db *sql.DB, action func(db *sql.DB, gameID, userID string) error) http.HandlerFunc`. It reads the caller from the context and `{id}` from the path, calls `action`, maps the errors, and calls `RefreshHub`. Confirm, reject and cancel use it with `mdb.ConfirmResult`, `mdb.RejectResult` and `mdb.CancelGame`.
+  - `proposeResultHandler(db *sql.DB) http.HandlerFunc`. It is separate because it reads the body. It uses the same error mapping.
   - `GameState` gets `ProposedBy string json:"proposedBy,omitempty"` and `Score string json:"score,omitempty"`. The winner goes in `Meta["winner"]`.
-  - `game.(*Hub).loadFromGame(g *mdb.Game)`. Maps `ongoing`→`playing`, `awaiting_confirmation`→`awaiting_confirmation`, `completed`→`finished`, `cancelled`→`cancelled`. Copies `WinnerID`, `Score` and `ProposedBy`. For `ongoing`, it sets all points, `SetsWon` and `Sets` to zero (the score restarts after a reject). Bumps `Version`.
-  - `game.RefreshHub(db *sql.DB, gameID string)`. If the hub is in memory: `GetGame`, `loadFromGame`, broadcast `pack("state", snapshot)`. Every handler calls it after success.
+  - `newHub` starts with status `ongoing`.
+  - `game.(*Hub).loadFromGame(g *mdb.Game)`. Copies `State` to `Status`, and copies `WinnerID`, `Score` and `ProposedBy`. For `ongoing`, it sets all points, `SetsWon` and `Sets` to zero (the score restarts after a reject). Bumps `Version`.
+  - `game.RefreshHub(db *sql.DB, gameID string)`. If the hub is in memory: `GetGame`, `loadFromGame`, broadcast `pack("state", snapshot)`.
   - `CreateHub` calls `loadFromGame` on the new hub.
-  - `applyScoreUpdate` ignores updates unless the status is `playing`. On a match win it calls `mdb.ProposeResult(h.db, h.ID, scorerUID, winnerUID, score)`. The scorer is the sender of the winning point, which is the same as the winner here. Only if that succeeds does it set status `awaiting_confirmation`, `ProposedBy`, `Score` and `Meta["winner"]`. On error it logs and keeps `playing`.
+  - `applyScoreUpdate` ignores updates unless the status is `ongoing`. On a match win it calls `mdb.ProposeResult(h.db, h.ID, uid, winnerUID, score)`. The sender of the winning point is the proposer, which is the same as the winner here. Only if that succeeds does it set status `awaiting_confirmation`, `ProposedBy`, `Score` and `Meta["winner"]`. On error it logs and keeps `ongoing`.
 
 - [ ] **Step 1: Write the failing tests** in `api/game/websocket-client_test.go` (they need the database):
 
 ```go
 func TestMatchWinCreatesProposal(t *testing.T) {
 	// seed luke, vader, best-of-1 game; h := CreateHub(game, db); ensurePlayer both
-	// 11 × handleMessage("luke", score:update +1)
+	// 11 × h.applyScoreUpdate("luke", 1)
 	// GetGame: State "awaiting_confirmation", ProposedBy "luke", WinnerID "luke", Score "11-0"
 	// snapshot().Status == "awaiting_confirmation"; luke mmr still 1500
 }
@@ -235,30 +202,31 @@ func TestHubLoadsWaitingProposal(t *testing.T) {
 	// seed game; ProposeResult(game, "vader", "vader", "")
 	// h := CreateHub(game, db) (fresh hub, as after a redeploy); ensurePlayer both
 	// snapshot(): Status "awaiting_confirmation", ProposedBy "vader", Meta["winner"] "vader"
-	// handleMessage("luke", score:update +1) → luke score stays 0
+	// h.applyScoreUpdate("luke", 1) → luke score stays 0
 }
 func TestRefreshAfterRejectRestartsScore(t *testing.T) {
 	// seed game; hub; luke scores 5; ProposeResult by luke; RejectResult by vader; RefreshHub(db, game)
-	// snapshot(): Status "playing", all scores 0, Sets empty
+	// snapshot(): Status "ongoing", all scores 0, Sets empty
 }
 ```
 
-Plus one handler test in `api/main_test.go`:
+Plus one handler test in `api/main_test.go`. It goes through the real `AuthMiddleware`, so it also checks that the caller comes from the token:
 
 ```go
 func TestConfirmHandlerUsesTokenUser(t *testing.T) {
 	// seed game, ProposeResult by luke
-	// request with ctx WithUserID("luke") and mux.SetURLVars{"id": game} → 409
-	// same request with WithUserID("vader") → 200; GetGame state "completed"
+	// router: mux with AuthMiddleware(db) and the confirm route
+	// POST /v1/game/<id>/result/confirm with "Bearer token-luke" → 409
+	// same request with "Bearer token-vader" → 200; GetGame state "completed"
 }
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `go test ./...`
-Expected: FAIL. The build fails on `RefreshHub` and the handler names, and `TestMatchWinCreatesProposal` sees state `ongoing`.
+Expected: FAIL. The build fails on `RefreshHub` and `gameActionHandler`, and `TestMatchWinCreatesProposal` sees state `ongoing`.
 
-- [ ] **Step 3: Implement the routes, handlers and hub changes as listed in Interfaces.** Handler names: `proposeResultHandler`, `confirmResultHandler`, `rejectResultHandler`, `cancelGameHandler`, each `func(db *sql.DB) http.HandlerFunc`.
+- [ ] **Step 3: Implement the routes, handlers and hub changes as listed in Interfaces.**
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -283,15 +251,15 @@ git commit -m "feat(api): add propose, confirm, reject and cancel routes"
 
 **Interfaces:**
 - Consumes: Task 3 routes and `GameState` fields (`status`, `proposedBy`, `score`, `meta.winner`).
-- Produces: `useGameState` also returns `proposeWinner(winnerId: string)`, `confirmResult()`, `rejectResult()`, `cancelMatch()`. Each one is `$fetch` POST with `Authorization: Bearer <token>` to the Task 3 route, with a destructive toast on error. Local `GameState` gets `proposedBy?: string` and `score?: string`. `status` is `'playing' | 'awaiting_confirmation' | 'finished' | 'cancelled'`.
+- Produces: `useGameState` also returns `proposeWinner(winnerId: string)`, `confirmResult()`, `rejectResult()`, `cancelMatch()`. Each one is `$fetch` POST with `Authorization: Bearer <token>` to the Task 3 route, with a destructive toast on error. Local `GameState` gets `proposedBy?: string` and `score?: string`. `status` is `'ongoing' | 'awaiting_confirmation' | 'completed' | 'cancelled'`.
 
-- [ ] **Step 1: Add the composable functions and fields.**
+- [ ] **Step 1: Add the composable functions and fields.** Change the `'finished'` checks to `'completed'`. Stop sending `userId` in `score:update`.
 - [ ] **Step 2: Update the page.**
   - A "Pick winner" button opens two choices: "I won" and "<opponent name> won".
   - A "Cancel match" button asks `confirm('Cancel this match? No result is saved.')`.
   - While `awaiting_confirmation`: an overlay. The proposer sees `Waiting for <opponent> to confirm`. The other player sees `<proposer> says <winner> won` plus `score` when set, with Confirm and Reject buttons.
   - While `cancelled`: an overlay `Match cancelled` with the existing "Back to Home" link.
-  - Disable the score buttons unless `status === 'playing'`.
+  - Change the `'finished'` checks to `'completed'`. Disable the score buttons unless `status === 'ongoing'`.
 - [ ] **Step 3: Update "How to play" in `README.md`.** Describe pick winner or tap score, opponent confirms, reject restarts the score at 0–0, and cancel.
 - [ ] **Step 4: Verify.**
   - Run `cd web && npm ci && npm run build`. Expected: build succeeds.
