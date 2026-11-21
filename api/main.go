@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -80,6 +81,11 @@ func main() {
 
 	protected.HandleFunc("/v1/challenge/{id}/accept", acceptChallengeHandler(db)).Methods("POST")
 	protected.HandleFunc("/v1/challenge/{id}/decline", declineChallengeHandler(db)).Methods("POST")
+
+	protected.HandleFunc("/v1/game/{id}/result", proposeResultHandler(db)).Methods("POST")
+	protected.HandleFunc("/v1/game/{id}/result/confirm", gameActionHandler(db, mdb.ConfirmResult)).Methods("POST")
+	protected.HandleFunc("/v1/game/{id}/result/reject", gameActionHandler(db, mdb.RejectResult)).Methods("POST")
+	protected.HandleFunc("/v1/game/{id}/cancel", gameActionHandler(db, mdb.CancelGame)).Methods("POST")
 
 	protected.HandleFunc("/v1/user/{id}/stats", getUserStatsHandler(db)).Methods("GET")
 	protected.HandleFunc("/v1/leaderboard", getLeaderboardHandler(db)).Methods("GET")
@@ -232,6 +238,66 @@ func declineChallengeHandler(db *sql.DB) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+/* Game results */
+type GameActionResponse struct {
+	Data string `json:"data"`
+}
+
+func gameActionHandler(db *sql.DB, action func(db *sql.DB, gameID, userID string) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := mw.UserIDFromContext(r.Context())
+		if !ok {
+			encodeError(fmt.Errorf("unauthorized"), w, http.StatusUnauthorized)
+			return
+		}
+		gameID := mux.Vars(r)["id"]
+		if err := action(db, gameID, uid); err != nil {
+			encodeError(err, w, gameErrorStatus(err))
+			return
+		}
+		gamews.RefreshHub(db, gameID)
+		encodeResponse(w, GameActionResponse{Data: "ok"}, http.StatusOK)
+	}
+}
+
+func proposeResultHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := mw.UserIDFromContext(r.Context())
+		if !ok {
+			encodeError(fmt.Errorf("unauthorized"), w, http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			WinnerID string `json:"winnerId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.WinnerID == "" {
+			encodeError(fmt.Errorf("body must be {\"winnerId\": \"...\"}"), w, http.StatusBadRequest)
+			return
+		}
+		gameID := mux.Vars(r)["id"]
+		if err := mdb.ProposeResult(db, gameID, uid, body.WinnerID, ""); err != nil {
+			encodeError(err, w, gameErrorStatus(err))
+			return
+		}
+		gamews.RefreshHub(db, gameID)
+		encodeResponse(w, GameActionResponse{Data: "ok"}, http.StatusOK)
+	}
+}
+
+func gameErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, mdb.ErrNotPlayer):
+		return http.StatusForbidden
+	case errors.Is(err, mdb.ErrWrongState):
+		return http.StatusConflict
+	case errors.Is(err, mdb.ErrBadWinner):
+		return http.StatusBadRequest
+	case errors.Is(err, sql.ErrNoRows):
+		return http.StatusNotFound
+	}
+	return http.StatusInternalServerError
 }
 
 type GetUserStatsResponse struct {
