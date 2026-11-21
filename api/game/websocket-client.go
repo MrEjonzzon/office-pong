@@ -41,10 +41,8 @@ type Envelope struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
-// ScoreUpdate uses userId to identify the player to update
 type ScoreUpdate struct {
-	UserID string `json:"userId"`
-	Delta  int    `json:"delta"`
+	Delta int `json:"delta"`
 }
 
 type Participants struct {
@@ -129,7 +127,7 @@ func (h *Hub) ensurePlayer(player Player) {
 	h.state.UpdatedAt = time.Now()
 }
 
-func (h *Hub) applyScoreUpdate(update ScoreUpdate) GameState {
+func (h *Hub) applyScoreUpdate(uid string, delta int) GameState {
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
 
@@ -138,19 +136,19 @@ func (h *Hub) applyScoreUpdate(update ScoreUpdate) GameState {
 		return h.state
 	}
 
-	player, ok := h.state.Players[update.UserID]
+	player, ok := h.state.Players[uid]
 	if !ok {
 		return h.state
 	}
 
 	// clamp delta to reasonable bounds
-	if update.Delta > 1 {
-		update.Delta = 1
+	if delta > 1 {
+		delta = 1
 	}
-	if update.Delta < -1 {
-		update.Delta = -1
+	if delta < -1 {
+		delta = -1
 	}
-	player.Score += update.Delta
+	player.Score += delta
 	if player.Score < 0 {
 		player.Score = 0
 	}
@@ -375,11 +373,7 @@ func WSHandler(db *sql.DB) http.HandlerFunc {
 				if err := json.Unmarshal(env.Payload, &upd); err != nil {
 					continue
 				}
-				// If userId not provided, default to sender uid
-				if upd.UserID == "" {
-					upd.UserID = uid
-				}
-				newState := h.applyScoreUpdate(upd)
+				newState := h.applyScoreUpdate(uid, upd.Delta)
 				// broadcast the full new state
 				h.broadcast <- pack("state", newState)
 			case "state:request":
