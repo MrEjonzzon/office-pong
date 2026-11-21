@@ -28,7 +28,7 @@ Build part 1 first. The stats count saved games, so they are only correct when t
 - Proposals do not expire. An unconfirmed proposal stays until the opponent confirms or rejects it.
 - No history of rejected proposals.
 - No profile pages for other players. The profile shows only your own stats.
-- No K/D on the leaderboard.
+- No K/D per opponent on the leaderboard. The leaderboard shows only the overall K/D of each player.
 - No points-based ratio. Matches where the winner is picked have no points.
 - No fix for the existing gap where accept and decline do not check that the caller is the challengee. Note it as a known gap.
 

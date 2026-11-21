@@ -12,7 +12,7 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 6. If your opponent rejects the result, the score restarts at 0-0.
 7. Tap "Cancel match" to stop the match. No result is saved. You can also cancel while a result waits.
 8. From the home list, you can confirm, reject or cancel a waiting result.
-9. Your profile shows your K/D and your wins and losses against each player.
+9. The leaderboard shows the K/D of each player. Your profile shows your K/D and your wins and losses against each player.
 
 **Rules:** a set goes to 11 points with a 2-point lead (so 10-10 continues until someone leads by 2). A match is 1, 3, 5 or 7 sets and the first to win the majority takes it. There is one shared rating (Elo, starts at 1500). Longer matches move it more: K = 24 / 32 / 40 / 48 for 1 / 3 / 5 / 7 sets.
 

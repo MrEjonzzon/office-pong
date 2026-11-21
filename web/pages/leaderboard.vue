@@ -56,6 +56,7 @@
                   <span>{{ entry.wins }}W</span>
                   <span>{{ entry.losses }}L</span>
                 </div>
+                <span class="text-xs text-muted-foreground">{{ kd(entry.wins, entry.losses) }} K/D</span>
                 <div class="flex flex-col items-end">
                   <span class="text-sm font-semibold">{{ entry.mmr }}</span>
                   <span class="text-xs text-muted-foreground">MMR</span>
