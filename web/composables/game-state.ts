@@ -14,8 +14,10 @@ interface GameState {
   opponent?: Player
   // opponentScore: number
   serving?: string
-  status: string
+  status: 'ongoing' | 'awaiting_confirmation' | 'completed' | 'cancelled'
   winner?: string
+  proposedBy?: string
+  score?: string
   bestOf: number
   sets: Record<string, number>[] // completed sets, uid -> points
   isDeuce: boolean
@@ -26,7 +28,9 @@ interface GameResponseState {
   payload: {
     id: string
     serving?: string
-    status: string
+    status: GameState['status']
+    proposedBy?: string
+    score?: string
     version: number
     bestOf: number
     sets?: Record<string, number>[]
@@ -128,6 +132,8 @@ export async function useGameState(gameID: string) {
       serving: data.payload.serving,
       status: data.payload.status,
       winner: data.payload.meta?.winner,
+      proposedBy: data.payload.proposedBy,
+      score: data.payload.score,
       bestOf: data.payload.bestOf || 1,
       sets: data.payload.sets ?? [],
       isDeuce:
@@ -146,8 +152,8 @@ export async function useGameState(gameID: string) {
       return
     }
 
-    if (state.value?.status === 'finished') {
-      console.warn("can't update a finished game bozo")
+    if (state.value?.status !== 'ongoing') {
+      console.warn("can't update a game that is not ongoing")
       return
     }
 
@@ -168,7 +174,6 @@ export async function useGameState(gameID: string) {
     const message = {
       type: 'score:update',
       payload: {
-        userId: state.value.you.uid,
         delta: 1,
       },
     }
@@ -176,9 +181,35 @@ export async function useGameState(gameID: string) {
     websocket.value.send(JSON.stringify(message))
   }
 
+  const postAction = async (path: string, body?: Record<string, string>) => {
+    const config = useRuntimeConfig()
+    try {
+      await $fetch(`${config.public.apiBasedUrl}/v1/game/${gameID}/${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionData?.session.token}` },
+        body,
+      })
+    } catch (e: any) {
+      toast({
+        title: 'Something went wrong',
+        description: e?.data?.error ?? 'Could not reach the game server.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const proposeWinner = (winnerId: string) => postAction('result', { winnerId })
+  const confirmResult = () => postAction('result/confirm')
+  const rejectResult = () => postAction('result/reject')
+  const cancelMatch = () => postAction('cancel')
+
   return {
     connected,
     state,
     incrementScore,
+    proposeWinner,
+    confirmResult,
+    rejectResult,
+    cancelMatch,
   }
 }

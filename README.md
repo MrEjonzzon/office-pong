@@ -7,7 +7,10 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 1. Sign up with a username and password.
 2. Tap the swords next to a player and pick the number of sets. They accept, and you both land on the game screen.
 3. Tap your own (green) button when you win a point. Their (red) button shows their score.
-4. The winner and the new ratings are saved automatically. See the leaderboard and your profile for stats.
+4. To end the match early, tap "Pick winner" and choose who won. Your opponent must confirm.
+5. The result is saved only when both players agree. Then the ratings change. See the leaderboard and your profile for stats.
+6. If your opponent rejects the result, the score restarts at 0-0.
+7. Tap "Cancel match" to stop the match. No result is saved.
 
 **Rules:** a set goes to 11 points with a 2-point lead (so 10-10 continues until someone leads by 2). A match is 1, 3, 5 or 7 sets and the first to win the majority takes it. There is one shared rating (Elo, starts at 1500). Longer matches move it more: K = 24 / 32 / 40 / 48 for 1 / 3 / 5 / 7 sets.
 
