@@ -16,8 +16,7 @@ Table tennis (pingis) challenges, live scoring and a leaderboard for the office.
 `compose.yml` runs everything: Postgres, the Go API, the Nuxt web app, a daily DB backup and a Caddy proxy on `127.0.0.1:8090`. It needs `cloudflared` on the host network. On the home server, it runs as the `cloudflared` stack from the Home-Network-Conf repo.
 
 1. **Tunnel:** in your Cloudflare tunnel, add a published application: hostname `pingis.emiljo.com`, service `HTTP` → `localhost:8090`.
-2. **Backup folder** (one time, on the server): `setup.sh` in Home-Network-Conf creates it. By hand:
-   `mkdir -p /tank/Data/backups/pingis && chown -R 999:999 /tank/Data/backups/pingis`
+2. **Backup folder** (one time, on the server as root): `./scripts/setup.sh`. It creates `/tank/Data/backups/pingis` (or `BACKUP_DIR`) owned by `999:999`. From another machine: `ssh root@omv 'bash -s' < scripts/setup.sh`.
 3. **Portainer:** Stacks → Add stack → **Repository**. Repository URL `https://github.com/MrEjonzzon/office-pong`, reference `refs/heads/main`, compose path `compose.yml`.
 4. **Environment variables:** `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and `ADMIN_PASSWORD` (see `stack.env.example`; generate with `openssl rand -hex 16`, `openssl rand -hex 32` and `openssl rand -base64 24 | tr -d '/+='`). `ADMIN_USERNAME` defaults to `admin`. Don't change `POSTGRES_PASSWORD` after the first deploy.
 5. **Deploy.** Tables are created automatically on first start. To update later: push, then "Pull and redeploy".
@@ -27,7 +26,7 @@ Live games are kept in memory, so redeploying during a game loses that game.
 ## Admin
 
 - **Admin page:** `/admin` (e.g. `https://pingis.emiljo.com/admin`) lists users and lets you create users, rename (display name), set a password and delete users. The browser asks for a login: `ADMIN_USERNAME` / `ADMIN_PASSWORD` from the stack variables. If `ADMIN_PASSWORD` is empty, the page is disabled. Deleting removes the user's games and challenges, but other players' ratings are not recalculated.
-- **Backups:** the database is dumped daily to `/tank/Data/backups/pingis` (7 daily, 4 weekly, 6 monthly, plus `last/`). Back up now: `docker exec <db-backup container> /backup.sh`. Restore into an empty DB: `gunzip -c <file>.sql.gz | docker exec -i officepong_postgres psql -U postgres officepong`. The dumps live on the same machine, so copy them elsewhere to survive losing the server.
+- **Backups:** the database is dumped daily to `/tank/Data/backups/pingis` (7 daily, 4 weekly, 6 monthly, plus `last/`). Back up now: `docker exec <db-backup container> /backup.sh`. Restore (on the server): `./scripts/restore-backup.sh [file.sql.gz]`. Without a file it uses `last/officepong-latest.sql.gz`. It asks for confirmation, saves the current data as `pre-restore-<time>.sql.gz` in the backup folder, stops api and web, replaces the database and starts them again. The dumps live on the same machine, so copy them elsewhere to survive losing the server.
 - **Reset a password** (on the server, needs `python3` and `docker`): `./scripts/reset-password.sh <username> <new-password>`. It also logs the user out everywhere.
 - **Delete users** (e.g. test accounts; on the server): `./scripts/delete-user.sh <username> [username...]`. It asks for confirmation and removes their games and challenges too. Other players' ratings are not recalculated.
 
@@ -42,7 +41,7 @@ Live games are kept in memory, so redeploying during a game loses that game.
 - `api/`: Go backend (REST + game WebSocket, ratings, DB setup).
 - `web/`: Nuxt 3 frontend (Vue 3, Tailwind) with better-auth login.
 - `app/`: Flutter app.
-- `deploy/`: Caddy reverse proxy. `scripts/`: admin scripts.
+- `deploy/`: Caddy reverse proxy. `scripts/`: server setup and admin scripts.
 - `compose.yml`: production stack. `compose.dev.yml`: local Postgres only.
 
 ## Credits
