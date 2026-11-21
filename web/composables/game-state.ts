@@ -68,6 +68,10 @@ export async function useGameState(gameID: string) {
   if(!gameID) throw new Error('gameID is required')
 
   initializeWebsocketConnection(gameID, sessionData, {
+    autoReconnect: { delay: 1000 },
+    // Cloudflare closes a websocket after ~100s without data. The server answers
+    // state:request with the current state, so this keeps the line open and resyncs the score.
+    heartbeat: { message: JSON.stringify({ type: 'state:request' }), interval: 30_000, pongTimeout: 10_000 },
     onMessage: async (ws, event) => {
       console.log('Message from server: ', event.data)
       await messageResponseHandler(event)
@@ -79,7 +83,6 @@ export async function useGameState(gameID: string) {
     onDisconnected: (ws, event) => {
       console.log('Disconnected from server ', event)
       connected.value = false
-      websocket.value?.close()
       if (event.code !== 1000) {
         toast({ title: 'Disconnected', description: 'Lost connection to the game server.', variant: 'destructive' })
       }
