@@ -54,7 +54,7 @@
     <button
       class="flex flex-1 items-center justify-center rounded-2xl bg-rose-700"
       :class="!state?.opponent ? '' : 'bg-rose-700'"
-      :disabled="state?.status === 'finished'"
+      :disabled="state?.status !== 'ongoing'"
       @click="console.log('TODO: local game logic')">
       <span class="text-9xl text-white/90">
         {{ state?.opponent?.score || 0 }}
